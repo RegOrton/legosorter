@@ -1,0 +1,17 @@
+services:
+  vision:
+    build: .
+    volumes:
+      - ./src:/app/src
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./data:/app/data
+    devices:
+      - /dev/video0:/dev/video0
+    privileged: true
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - USE_MOCK_VIDEO=false
+    command: python src/main.py
