@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 export default function TrainingPage() {
     const [isTraining, setIsTraining] = useState(false);
     const [status, setStatus] = useState<any>(null);
+    const [images, setImages] = useState<any>(null);
     const [logs, setLogs] = useState<string[]>([]);
     const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -16,6 +17,7 @@ export default function TrainingPage() {
             setStatus(data);
             setIsTraining(data.is_running);
             if (data.logs) setLogs(data.logs);
+            if (data.images) setImages(data.images);
         } catch (e) {
             console.error("Failed to fetch status", e);
         }
@@ -31,7 +33,7 @@ export default function TrainingPage() {
 
     const startTraining = async () => {
         try {
-            await fetch(`${API_URL}/train/start?epochs=10&batch_size=16`, { method: 'POST' });
+            await fetch(`${API_URL}/train/start?epochs=10&batch_size=8`, { method: 'POST' });
             fetchStatus();
         } catch (e) {
             alert("Failed to start training: " + e);
@@ -52,8 +54,46 @@ export default function TrainingPage() {
             <main className="flex-1 p-6 grid grid-cols-1 md:grid-cols-12 gap-6 max-w-[1600px] mx-auto w-full">
                 {/* Left Column: Logs & Viz */}
                 <section className="col-span-1 md:col-span-8 flex flex-col gap-6">
+                    <div className="flex flex-col gap-4">
+                        <h2 className="text-xl font-bold tracking-tight">Live Training Feed</h2>
+
+                        {/* Image Preview */}
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="flex flex-col gap-2">
+                                <span className="text-xs font-bold text-zinc-500 uppercase">Anchor</span>
+                                <div className="aspect-square bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden relative">
+                                    {images?.anchor ? (
+                                        <img src={`data:image/jpeg;base64,${images.anchor}`} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="absolute inset-0 flex items-center justify-center text-zinc-700 text-xs">Waiting...</div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <span className="text-xs font-bold text-zinc-500 uppercase">Positive</span>
+                                <div className="aspect-square bg-zinc-900 border border-emerald-900/50 rounded-lg overflow-hidden relative">
+                                    {images?.positive ? (
+                                        <img src={`data:image/jpeg;base64,${images.positive}`} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="absolute inset-0 flex items-center justify-center text-zinc-700 text-xs">Waiting...</div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <span className="text-xs font-bold text-zinc-500 uppercase">Negative</span>
+                                <div className="aspect-square bg-zinc-900 border border-red-900/50 rounded-lg overflow-hidden relative">
+                                    {images?.negative ? (
+                                        <img src={`data:image/jpeg;base64,${images.negative}`} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="absolute inset-0 flex items-center justify-center text-zinc-700 text-xs">Waiting...</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="flex flex-col gap-4 h-full">
-                        <h2 className="text-xl font-bold tracking-tight">Training Logs & Visuals</h2>
+                        <h2 className="text-xl font-bold tracking-tight">Logs</h2>
 
                         <div className="bg-zinc-950 rounded-xl border border-zinc-800 p-4 font-mono text-xs overflow-y-auto h-[500px] flex flex-col-reverse">
                             {logs.length === 0 && <span className="text-zinc-600 italic">No logs yet...</span>}

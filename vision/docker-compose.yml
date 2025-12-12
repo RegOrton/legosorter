@@ -6,14 +6,14 @@ services:
       - ./input:/app/input
       - ./output:/app/output
       - ./data:/app/data
-    devices:
-      - /dev/video0:/dev/video0
-    privileged: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - USE_MOCK_VIDEO=false
+      - USE_HTTP_WEBCAM=true
+      - WEBCAM_SERVER_URL=http://host.docker.internal:5000
     ports:
       - "8000:8000"
     command: python src/main_api.py

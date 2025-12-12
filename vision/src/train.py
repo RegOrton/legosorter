@@ -8,6 +8,9 @@ from pathlib import Path
 import logging
 import threading
 import time
+import base64
+import cv2
+import numpy as np
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -20,6 +23,7 @@ class TrainingState:
         self.total_epochs = 0
         self.loss = 0.0
         self.logs = []
+        self.latest_images = None # { 'anchor': b64, 'positive': b64, 'negative': b64 }
 
     def log(self, message):
         self.logs.append(message)
@@ -27,6 +31,29 @@ class TrainingState:
             self.logs.pop(0)
 
 state = TrainingState()
+
+def tensor_to_b64(tensor):
+    # tensor: (3, 224, 224)
+    # Un-normalize
+    # Mean: [0.485, 0.456, 0.406], Std: [0.229, 0.224, 0.225]
+    mean = np.array([0.485, 0.456, 0.406]).reshape(3, 1, 1)
+    std = np.array([0.229, 0.224, 0.225]).reshape(3, 1, 1)
+    
+    img = tensor.cpu().numpy()
+    img = img * std + mean # Denormalize
+    img = np.clip(img * 255, 0, 255).astype(np.uint8)
+    img = np.transpose(img, (1, 2, 0)) # CHW -> HWC
+    
+    # Convert RGB to BGR for OpenCV encoding if needed, but we output base64 for web (RGB usually assumed or PNG)
+    # OpenCV encodes BGR by default, so if we want RGB in web, we should swap if using cv2.imencode.
+    # Actually, let's keep it simple. cv2 expects BGR. 
+    # Our input was RGB. So img is RGB. 
+    # cv2.imencode expects BGR. So we convert RGB -> BGR.
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    
+    _, buffer = cv2.imencode('.jpg', img)
+    b64 = base64.b64encode(buffer).decode('utf-8')
+    return b64
 
 class Trainer:
     def __init__(self):
@@ -103,9 +130,19 @@ class Trainer:
                     total_loss += loss.item()
                     batches += 1
                     
-                    # Update state more frequently for UI
-                    if i % 5 == 0:
+                    # Update metrics and image preview
+                    if i % 2 == 0: # Update frequently
                         state.loss = loss.item()
+                        try:
+                            # Capture the first item in the batch for preview
+                            state.latest_images = {
+                                'anchor': tensor_to_b64(anchor[0]),
+                                'positive': tensor_to_b64(positive[0]),
+                                'negative': tensor_to_b64(negative[0])
+                            }
+                        except Exception as e:
+                            # Don't crash training loop if preview fails
+                            print(f"Preview error: {e}")
                 
                 avg_loss = total_loss / batches if batches > 0 else 0
                 state.log(f"Epoch {epoch+1} done. Avg Loss: {avg_loss:.4f}")

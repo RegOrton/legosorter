@@ -1,6 +1,8 @@
 import cv2
 import time
 import logging
+import os
+from webcam_client import create_webcam_capture
 
 class Camera:
     def __init__(self, source=0, width=1280, height=720):
@@ -13,11 +15,19 @@ class Camera:
         self.height = height
         self.cap = None
         self.logger = logging.getLogger(__name__)
+        self.use_http_webcam = os.getenv('USE_HTTP_WEBCAM', 'false').lower() == 'true'
 
     def start(self):
         """Opens the video source."""
         self.logger.info(f"Opening camera source: {self.source}")
-        self.cap = cv2.VideoCapture(self.source)
+        
+        # Use HTTP webcam if enabled and source is an integer (webcam index)
+        if self.use_http_webcam and isinstance(self.source, int):
+            self.logger.info("Using HTTP webcam client")
+            self.cap = create_webcam_capture(use_http=True)
+        else:
+            self.logger.info("Using direct video capture")
+            self.cap = cv2.VideoCapture(self.source)
         
         if not self.cap.isOpened():
             self.logger.error(f"Failed to open camera source: {self.source}")
