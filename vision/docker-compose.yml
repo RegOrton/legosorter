@@ -14,4 +14,6 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - USE_MOCK_VIDEO=false
-    command: python src/main.py
+    ports:
+      - "8000:8000"
+    command: python src/main_api.py

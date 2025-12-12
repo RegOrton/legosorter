@@ -1,89 +1,143 @@
 import os
 import requests
-import time
+import gzip
+import shutil
 import logging
 from pathlib import Path
-from dotenv import load_dotenv
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load Environment Variables
-load_dotenv()
-API_KEY = os.getenv("REBRICKABLE_API_KEY")
-BASE_URL = "https://rebrickable.com/api/v3/lego"
-DATA_DIR = Path("/app/data/reference")
+# Constants
+BASE_URL = "https://cdn.rebrickable.com/media/downloads"
+TABLES = [
+    "themes",
+    "colors",
+    "part_categories",
+    "parts",
+    "part_relationships",
+    "elements",
+    "minifigs",
+    "inventories",
+    "inventory_parts",
+    "inventory_sets",
+    "inventory_minifigs"
+]
 
-def check_api_key():
-    if not API_KEY or API_KEY == "paste_your_key_here":
-        logger.error("REBRICKABLE_API_KEY is missing or invalid. Please check your .env file.")
+# Define data directory relative to this script
+# vision/src/ingest_rebrickable.py -> vision/data/rebrickable
+CURRENT_DIR = Path(__file__).resolve().parent
+DATA_DIR = CURRENT_DIR.parent / "data" / "rebrickable"
+
+def download_file(url, dest_path):
+    """Downloads a file from a URL to a destination path."""
+    try:
+        logger.info(f"Downloading {url}...")
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(dest_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to download {url}: {e}")
         return False
-    return True
 
-def get_headers():
-    return {"Authorization": f"key {API_KEY}"}
+def decompress_file(gzip_path, output_path):
+    """Decompresses a GZIP file."""
+    try:
+        logger.info(f"Extracting {gzip_path} to {output_path}...")
+        with gzip.open(gzip_path, 'rb') as f_in:
+            with open(output_path, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to decompress {gzip_path}: {e}")
+        return False
 
-def fetch_common_parts(limit=20):
-    """
-    Fetches a list of common parts. 
-    In a real scenario, we'd maybe fetch based on a specific set or year.
-    Here we just fetch the 'elements' endpoint or 'parts' endpoint.
-    """
-    url = f"{BASE_URL}/parts/"
-    params = {
-        "page_size": limit,
-        "ordering": "-year_from" # Get newer parts first? or generic?
-    }
-    logger.info(f"Fetching top {limit} parts from {url}...")
+import csv
+import time
+
+def download_element_images(limit=50):
+    """Downloads element images from Rebrickable CDN."""
+    elements_file = DATA_DIR / "elements.csv"
+    images_dir = DATA_DIR / "images" / "elements"
     
-    try:
-        response = requests.get(url, headers=get_headers(), params=params)
-        response.raise_for_status()
-        return response.json()['results']
-    except Exception as e:
-        logger.error(f"Failed to fetch parts: {e}")
-        return []
-
-def download_image(part_num, image_url):
-    if not image_url:
-        logger.warning(f"No image URL for part {part_num}")
+    if not elements_file.exists():
+        logger.error(f"Elements file not found at {elements_file}. Cannot download images.")
         return
 
-    filename = DATA_DIR / f"{part_num}.jpg"
-    if filename.exists():
-        logger.info(f"Image for {part_num} already exists.")
-        return
+    images_dir.mkdir(parents=True, exist_ok=True)
+    
+    logger.info(f"Starting image download (limit={limit})...")
+    
+    count = 0
+    with open(elements_file, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if count >= limit:
+                break
+                
+            element_id = row['element_id']
+            image_url = f"https://cdn.rebrickable.com/media/parts/elements/{element_id}.jpg"
+            save_path = images_dir / f"{element_id}.jpg"
+            
+            if save_path.exists():
+                count += 1
+                continue
+                
+            try:
+                # logger.info(f"Downloading image for element {element_id}...")
+                with requests.get(image_url, stream=True) as r:
+                    if r.status_code == 200:
+                        with open(save_path, 'wb') as f_out:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                f_out.write(chunk)
+                        count += 1
+                        time.sleep(0.1)  # Rate limiting
+                    else:
+                        # Some elements might not have images or URL is different
+                        # logger.warning(f"Image not found for {element_id} (Status {r.status_code})")
+                        pass
+            except Exception as e:
+                logger.error(f"Failed to download image {element_id}: {e}")
 
-    try:
-        logger.info(f"Downloading {part_num} from {image_url}")
-        img_data = requests.get(image_url).content
-        with open(filename, 'wb') as handler:
-            handler.write(img_data)
-        time.sleep(0.5) # Be nice to the API
-    except Exception as e:
-        logger.error(f"Failed to download image for {part_num}: {e}")
+    logger.info(f"Downloaded {count} images to {images_dir}")
 
 def main():
-    if not check_api_key():
-        return
-
     # Ensure output directory exists
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not DATA_DIR.exists():
+        logger.info(f"Creating directory {DATA_DIR}")
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1. Fetch Parts
-    parts = fetch_common_parts(limit=50)
-    
-    # 2. Download Images
-    for part in parts:
-        part_num = part['part_num']
-        name = part['name']
-        img_url = part['part_img_url']
+    for table in TABLES:
+        filename = f"{table}.csv.gz"
+        url = f"{BASE_URL}/{filename}"
+        gz_file_path = DATA_DIR / filename
+        csv_file_path = DATA_DIR / f"{table}.csv"
         
-        logger.info(f"Processing {part_num}: {name}")
-        download_image(part_num, img_url)
+        # Check if CSV already exists to avoid re-downloading every time
+        if csv_file_path.exists():
+             logger.info(f"{table}.csv already exists. Skipping download.")
+             continue
 
-    logger.info("Ingestion Complete.")
+        # 1. Download
+        if download_file(url, gz_file_path):
+            # 2. Decompress
+            if decompress_file(gz_file_path, csv_file_path):
+                pass
+            else:
+                logger.error(f"Skipping decompression for {table}")
+        else:
+            logger.error(f"Skipping {table}")
+
+    # Download Images
+    # Warning: Downloading ALL images is huge. Set a limit appropriately.
+    # There are >50k elements.
+    download_element_images(limit=50)
+
+    logger.info("Ingestion Complete. Files saved to " + str(DATA_DIR))
 
 if __name__ == "__main__":
     main()

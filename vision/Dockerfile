@@ -14,10 +14,15 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir --timeout=1000 --retries=10 -r requirements.txt
 
 # Copy source code
 COPY src/ ./src/
 
 # Default command (can be overridden by docker-compose)
-CMD ["python", "src/main.py"]
+# Expose API port
+EXPOSE 8000
+
+# Default command
+CMD ["python", "src/main_api.py"]
