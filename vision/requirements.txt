@@ -6,3 +6,4 @@ torch
 torchvision
 fastapi
 uvicorn
+tqdm
