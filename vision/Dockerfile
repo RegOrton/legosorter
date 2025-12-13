@@ -4,13 +4,26 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies dependencies for OpenCV and other tools
+# Install system dependencies for OpenCV, LDView, and other tools
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    ldview \
+    wget \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Download and install LDraw parts library
+RUN mkdir -p /usr/share/ldraw && \
+    cd /tmp && \
+    wget -q https://library.ldraw.org/library/updates/complete.zip && \
+    unzip -q complete.zip -d /usr/share/ldraw && \
+    rm complete.zip
+
+# Set LDraw directory environment variable
+ENV LDRAWDIR=/usr/share/ldraw
 
 # Install Python dependencies
 COPY requirements.txt .

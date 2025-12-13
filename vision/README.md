@@ -11,9 +11,59 @@ Computer vision module for the LEGO Sorter system. This module handles part iden
 - **REST API**: FastAPI server for real-time inference
 - **Docker Support**: Containerized training and deployment
 
+## Quick Start with Docker (Recommended)
+
+The easiest way to generate training data is using Docker with LDView pre-installed:
+
+```bash
+# 1. Build the container (includes LDView + LDraw library)
+docker-compose build
+
+# 2. Place your .dat files in input/dat_files/
+mkdir -p input/dat_files
+cp /path/to/your/*.dat input/dat_files/
+
+# 3. Generate training data
+docker-compose run --rm training
+
+# Output will be in data/training/
+```
+
+**Everything is pre-configured!** No need to install LDView or LDraw library manually.
+
+See [DOCKER_GUIDE.md](./DOCKER_GUIDE.md) for complete Docker documentation.
+
+---
+
 ## Training Data Generation
 
-### Option 1: LDView Renderer (Recommended)
+### Option 1: Docker with LDView (Easiest - Recommended)
+
+Use the pre-configured Docker container:
+
+```bash
+docker-compose run --rm training
+```
+
+**Advantages:**
+- No manual installation required
+- LDView and LDraw library pre-installed
+- Consistent environment
+- Easy configuration via environment variables
+
+**Configuration:**
+```bash
+# Custom settings
+docker-compose run --rm \
+  -e SAMPLES_PER_PART=50 \
+  -e OUTPUT_SIZE=512 \
+  -e LIMIT=10 \
+  training
+```
+
+See [DOCKER_GUIDE.md](./DOCKER_GUIDE.md) for detailed instructions.
+
+### Option 2: Local LDView Renderer
 
 Generate realistic 3D training data from LEGO .dat files:
 
@@ -36,7 +86,7 @@ python src/generate_ldview_training_data.py \
 
 See [LDVIEW_RENDERER.md](./LDVIEW_RENDERER.md) for detailed documentation.
 
-### Option 2: 2D Image Synthesis
+### Option 3: 2D Image Synthesis
 
 Composite 2D part images onto backgrounds:
 

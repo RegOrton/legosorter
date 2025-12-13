@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import random
 import tempfile
+import os
 from pathlib import Path
 from typing import Tuple, Optional, List
 import logging
@@ -28,11 +29,18 @@ class LDViewRenderer:
 
         Args:
             ldview_path: Path to LDView executable (default: "ldview" assumes it's in PATH)
-            ldraw_dir: Path to LDraw parts library directory (optional, LDView may auto-detect)
+            ldraw_dir: Path to LDraw parts library directory (optional, auto-detects from LDRAWDIR env var)
             output_size: Output image size (width, height)
             background_path: Optional path to background image for compositing
         """
         self.ldview_path = ldview_path
+
+        # Auto-detect LDraw directory from environment variable if not provided
+        if ldraw_dir is None:
+            ldraw_dir = os.environ.get('LDRAWDIR')
+            if ldraw_dir:
+                logger.info(f"Using LDraw directory from LDRAWDIR env var: {ldraw_dir}")
+
         self.ldraw_dir = ldraw_dir
         self.output_size = output_size
         self.background_path = background_path
