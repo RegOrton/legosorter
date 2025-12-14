@@ -128,6 +128,10 @@ curl http://localhost:8000/inference/status
 - **`dataset.py`** - LegoTripletDataset for triplet loss training
 - **`synthesizer.py`** - LegoSynthesizer generates synthetic training samples with perspective transforms, shadows, and camera effects
 - **`generate_backgrounds.py`** - Generates synthetic background images (solid colors, gradients, textures) for training diversity
+- **`ldraw_parser.py`** - Parses LDraw .dat files and resolves subfile references to build 3D geometry
+- **`ldraw_renderer.py`** - Software 3D renderer for generating multi-view training images from LDraw models
+- **`ldraw_dataset.py`** - PyTorch dataset for training with multi-view LDraw renders
+- **`generate_ldraw_dataset.py`** - CLI tool to generate training images from LDraw library
 - **`camera.py`** - Camera wrapper that supports both direct cv2.VideoCapture and HTTP webcam client
 - **`webcam_client.py`** - WebcamClient class for fetching frames from Windows host
 - **`inference.py`** - Real-time inference engine (planned)
@@ -159,30 +163,55 @@ The vision system uses **Triplet Loss** to learn embeddings:
 
 The model (MobileNetV3) learns to place similar bricks close in embedding space and dissimilar bricks far apart.
 
-### Synthetic Data Generation
+### Training Data Sources
 
-Since real training data is limited (single-viewpoint CGI renders from Rebrickable), `LegoSynthesizer` applies aggressive augmentation to bridge the sim-to-real domain gap:
+The system supports two training data sources:
 
-1. **Background Masking**: Removes white background from CGI renders using thresholding + morphological cleanup
-2. **Perspective Transform** (70% chance): Simulates viewing angle changes to compensate for single-viewpoint source data
-3. **2D Rotation**: Full 360° rotation around camera axis
-4. **Scale Variation**: 0.6x to 1.3x random scaling
-5. **Multi-Background Compositing**: Randomly selects from 15+ backgrounds (solid colors, gradients, textures)
-6. **Synthetic Shadows** (70% chance): Directional drop shadows with random light angle
-7. **Camera Effects**:
-   - Brightness/contrast adjustment (simulates exposure)
-   - Sensor noise injection
-   - Gaussian blur (focus/motion simulation)
-   - Color temperature shifts (warm/cool lighting)
+#### 1. LDraw Multi-View Renders (Recommended)
 
-The `dataset.py` adds additional PyTorch transforms:
-- **ColorJitter** (80% chance): brightness, contrast, saturation, hue variation
-- **RandomGrayscale** (10% chance): forces shape-based learning
-- **GaussianBlur** (30% chance): additional blur augmentation
-- **RandomErasing** (10% chance): simulates occlusion
+Uses the [LDraw](https://www.ldraw.org/) 3D parts library to generate true multi-view training images:
 
-Run `python vision/src/generate_backgrounds.py` to regenerate synthetic backgrounds.
-Run `python vision/src/test_synthesizer.py` to visualize augmentation samples in `vision/output/debug/`.
+**Setup:**
+```bash
+# Download complete.zip from https://library.ldraw.org/library/updates/complete.zip
+# Place in vision/ directory, then extract:
+cd vision && unzip complete.zip -d data/
+
+# Generate training renders (94 parts × 5 colors × 8 views = 3,760 images):
+python vision/src/generate_ldraw_dataset.py --num-parts 100 --views-per-color 8 --num-colors 5
+```
+
+**Key files:**
+- `ldraw_parser.py` - Parses .dat files, resolves subfile references, extracts 3D geometry
+- `ldraw_renderer.py` - Software 3D renderer with orthographic projection, shading, multi-view generation
+- `ldraw_dataset.py` - PyTorch dataset for triplet/classification training
+- `generate_ldraw_dataset.py` - CLI to generate training images
+
+**Advantages:**
+- True 3D viewpoint variation (elevation 20-70°, azimuth 0-360°)
+- Consistent geometry across all angles
+- 23,000+ parts available in LDraw library
+
+#### 2. Rebrickable CGI (Legacy)
+
+Uses single-viewpoint CGI renders from Rebrickable with aggressive augmentation:
+- Perspective transforms to simulate angle changes
+- Synthetic shadows and camera effects
+- Multiple backgrounds
+
+**Generate backgrounds:** `python vision/src/generate_backgrounds.py`
+**Test augmentations:** `python vision/src/test_synthesizer.py`
+
+### Starting Training
+
+**Via API (default uses LDraw):**
+```bash
+curl -X POST "http://localhost:8000/train/start?epochs=20&batch_size=16&dataset=ldraw"
+# Or use Rebrickable dataset:
+curl -X POST "http://localhost:8000/train/start?epochs=20&batch_size=16&dataset=rebrickable"
+```
+
+**Via Frontend:** Navigate to `http://localhost:3000/training`
 
 ### Camera Abstraction
 

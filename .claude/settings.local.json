@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(test:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(unzip:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(python:*)",
+      "Bash(ls:*)",
+      "Bash(git fetch:*)",
+      "Bash(git add:*)"
     ]
   }
 }

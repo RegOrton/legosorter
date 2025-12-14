@@ -16,6 +16,10 @@ import numpy as np
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Dataset types
+DATASET_REBRICKABLE = "rebrickable"
+DATASET_LDRAW = "ldraw"
+
 class TrainingState:
     def __init__(self):
         self.is_running = False
@@ -60,39 +64,55 @@ class Trainer:
         self.stop_event = threading.Event()
         self.thread = None
 
-    def start_training(self, epochs=10, batch_size=32, limit=None):
+    def start_training(self, epochs=10, batch_size=32, limit=None, dataset_type=DATASET_LDRAW):
         if self.thread and self.thread.is_alive():
             return False, "Training already running"
-        
+
         self.stop_event.clear()
-        self.thread = threading.Thread(target=self._train_loop, args=(epochs, batch_size, limit))
+        self.thread = threading.Thread(
+            target=self._train_loop,
+            args=(epochs, batch_size, limit, dataset_type)
+        )
         self.thread.start()
-        return True, "Training started"
+        return True, f"Training started with {dataset_type} dataset"
 
     def stop_training(self):
         if not self.thread or not self.thread.is_alive():
             return False, "Training not running"
-        
+
         self.stop_event.set()
         self.thread.join(timeout=5)
         return True, "Stopping training..."
 
-    def _train_loop(self, epochs, batch_size, limit):
+    def _train_loop(self, epochs, batch_size, limit, dataset_type):
         state.is_running = True
         state.total_epochs = epochs
         state.epoch = 0
         state.loss = 0.0
-        state.log("Initializing training...")
-        
+        state.log(f"Initializing training with {dataset_type} dataset...")
+
         try:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             state.log(f"Device: {device}")
-            
-            data_dir = "/app/data" 
+
+            data_dir = "/app/data"
             if not Path(data_dir).exists():
                 data_dir = str(Path(__file__).resolve().parent.parent / "data")
-            
-            dataloader = get_dataloader(data_dir, batch_size=batch_size, limit=limit)
+
+            # Load appropriate dataset
+            if dataset_type == DATASET_LDRAW:
+                from ldraw_dataset import get_ldraw_dataloader
+                ldraw_renders_dir = Path(data_dir) / "ldraw_renders"
+                if not ldraw_renders_dir.exists():
+                    state.log("ERROR: LDraw renders not found. Run generate_ldraw_dataset.py first.")
+                    state.is_running = False
+                    return
+                dataloader = get_ldraw_dataloader(ldraw_renders_dir, batch_size=batch_size, limit=limit)
+                state.log(f"Loaded LDraw dataset with {len(dataloader.dataset.parts)} parts")
+            else:
+                dataloader = get_dataloader(data_dir, batch_size=batch_size, limit=limit)
+                state.log("Loaded Rebrickable dataset")
+
             model = LegoEmbeddingNet(embedding_dim=128).to(device)
             state.log("Model loaded.")
             

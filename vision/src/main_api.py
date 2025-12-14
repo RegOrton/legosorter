@@ -96,8 +96,22 @@ def video_frame():
     raise HTTPException(status_code=500, detail="Failed to capture frame")
 
 @app.post("/train/start")
-def start_training(epochs: int = 10, batch_size: int = 32):
-    success, msg = training_manager.start_training(epochs=epochs, batch_size=batch_size)
+def start_training(epochs: int = 10, batch_size: int = 32, dataset: str = "ldraw"):
+    """
+    Start training with specified dataset.
+
+    Args:
+        epochs: Number of training epochs
+        batch_size: Training batch size
+        dataset: Dataset type - "ldraw" (multi-view 3D renders) or "rebrickable" (single-view CGI)
+    """
+    from train import DATASET_LDRAW, DATASET_REBRICKABLE
+    dataset_type = DATASET_LDRAW if dataset == "ldraw" else DATASET_REBRICKABLE
+    success, msg = training_manager.start_training(
+        epochs=epochs,
+        batch_size=batch_size,
+        dataset_type=dataset_type
+    )
     if not success:
         raise HTTPException(status_code=400, detail=msg)
     return {"message": msg}
