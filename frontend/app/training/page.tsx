@@ -1,15 +1,13 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 
 export default function TrainingPage() {
     const [isTraining, setIsTraining] = useState(false);
     const [status, setStatus] = useState<any>(null);
     const [images, setImages] = useState<any>(null);
     const [logs, setLogs] = useState<string[]>([]);
-    const [dataset, setDataset] = useState<"ldraw" | "ldview" | "rebrickable">("ldraw");
-    const [epochs, setEpochs] = useState(10);
-    const [batchSize, setBatchSize] = useState(8);
-    const [cameraType, setCameraType] = useState<"usb" | "csi" | "http">("usb");
+    const [settings, setSettings] = useState<any>(null);
     const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
     const API_URL = "http://localhost:8000";
@@ -27,33 +25,19 @@ export default function TrainingPage() {
         }
     };
 
-    const fetchCameraType = async () => {
+    const fetchSettings = async () => {
         try {
-            const res = await fetch(`${API_URL}/camera/type`);
+            const res = await fetch(`${API_URL}/settings`);
             const data = await res.json();
-            if (data.camera_type) {
-                setCameraType(data.camera_type);
-            }
+            setSettings(data);
         } catch (e) {
-            console.error("Failed to fetch camera type", e);
-        }
-    };
-
-    const changeCameraType = async (newType: "usb" | "csi" | "http") => {
-        try {
-            const res = await fetch(`${API_URL}/camera/type?camera_type=${newType}`, { method: 'POST' });
-            const data = await res.json();
-            if (data.camera_type) {
-                setCameraType(data.camera_type);
-            }
-        } catch (e) {
-            alert("Failed to change camera type: " + e);
+            console.error("Failed to fetch settings", e);
         }
     };
 
     useEffect(() => {
-        // Fetch camera type on mount
-        fetchCameraType();
+        // Fetch settings on mount
+        fetchSettings();
 
         // Poll status every second
         pollInterval.current = setInterval(fetchStatus, 1000);
@@ -63,8 +47,13 @@ export default function TrainingPage() {
     }, []);
 
     const startTraining = async () => {
+        if (!settings) {
+            alert("Settings not loaded yet");
+            return;
+        }
+
         try {
-            await fetch(`${API_URL}/train/start?epochs=${epochs}&batch_size=${batchSize}&dataset=${dataset}`, { method: 'POST' });
+            await fetch(`${API_URL}/train/start?epochs=${settings.epochs}&batch_size=${settings.batch_size}&dataset=${settings.dataset}`, { method: 'POST' });
             fetchStatus();
         } catch (e) {
             alert("Failed to start training: " + e);
@@ -82,6 +71,31 @@ export default function TrainingPage() {
 
     return (
         <div className="flex flex-col text-zinc-50 h-full">
+            {/* Header */}
+            <header className="border-b border-zinc-800 bg-zinc-950">
+                <div className="max-w-[1600px] mx-auto px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                        <h1 className="text-2xl font-bold tracking-tight">Training Dashboard</h1>
+                        <nav className="flex gap-4">
+                            <Link href="/training" className="text-sm text-emerald-400 font-medium">
+                                Training
+                            </Link>
+                            <Link href="/settings" className="text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
+                                Settings
+                            </Link>
+                        </nav>
+                    </div>
+                    {settings && (
+                        <div className="text-xs text-zinc-500">
+                            <span className="mr-4">Dataset: <span className="text-zinc-300">{settings.dataset}</span></span>
+                            <span className="mr-4">Epochs: <span className="text-zinc-300">{settings.epochs}</span></span>
+                            <span className="mr-4">Batch: <span className="text-zinc-300">{settings.batch_size}</span></span>
+                            <span>Camera: <span className="text-zinc-300">{settings.camera_type}</span></span>
+                        </div>
+                    )}
+                </div>
+            </header>
+
             <main className="flex-1 p-6 grid grid-cols-1 md:grid-cols-12 gap-6 max-w-[1600px] mx-auto w-full">
                 {/* Left Column: Logs & Viz */}
                 <section className="col-span-1 md:col-span-8 flex flex-col gap-6">
@@ -186,149 +200,8 @@ export default function TrainingPage() {
 
                         <div className="h-px bg-zinc-800 my-1" />
 
-                        <div>
-                            <h3 className="text-sm font-medium text-zinc-400 mb-3">DATASET SOURCE</h3>
-                            <div className="space-y-2">
-                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${dataset === 'ldraw' ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
-                                    <input
-                                        type="radio"
-                                        name="dataset"
-                                        value="ldraw"
-                                        checked={dataset === 'ldraw'}
-                                        onChange={(e) => setDataset(e.target.value as any)}
-                                        disabled={isTraining}
-                                        className="w-4 h-4"
-                                    />
-                                    <div className="flex-1">
-                                        <div className="text-sm font-medium text-zinc-200">LDraw Python</div>
-                                        <div className="text-xs text-zinc-500">Software renderer, multi-view</div>
-                                    </div>
-                                </label>
-
-                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${dataset === 'ldview' ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
-                                    <input
-                                        type="radio"
-                                        name="dataset"
-                                        value="ldview"
-                                        checked={dataset === 'ldview'}
-                                        onChange={(e) => setDataset(e.target.value as any)}
-                                        disabled={isTraining}
-                                        className="w-4 h-4"
-                                    />
-                                    <div className="flex-1">
-                                        <div className="text-sm font-medium text-zinc-200">LDView Renders</div>
-                                        <div className="text-xs text-zinc-500">Pre-generated realistic 3D</div>
-                                    </div>
-                                </label>
-
-                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${dataset === 'rebrickable' ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
-                                    <input
-                                        type="radio"
-                                        name="dataset"
-                                        value="rebrickable"
-                                        checked={dataset === 'rebrickable'}
-                                        onChange={(e) => setDataset(e.target.value as any)}
-                                        disabled={isTraining}
-                                        className="w-4 h-4"
-                                    />
-                                    <div className="flex-1">
-                                        <div className="text-sm font-medium text-zinc-200">Rebrickable CGI</div>
-                                        <div className="text-xs text-zinc-500">On-the-fly synthesis</div>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div className="h-px bg-zinc-800 my-1" />
-
-                        <div>
-                            <h3 className="text-sm font-medium text-zinc-400 mb-3">TRAINING PARAMETERS</h3>
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="text-xs text-zinc-500 block mb-1">Epochs</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="100"
-                                        value={epochs}
-                                        onChange={(e) => setEpochs(parseInt(e.target.value) || 10)}
-                                        disabled={isTraining}
-                                        className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-zinc-500 block mb-1">Batch Size</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="64"
-                                        value={batchSize}
-                                        onChange={(e) => setBatchSize(parseInt(e.target.value) || 8)}
-                                        disabled={isTraining}
-                                        className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="h-px bg-zinc-800 my-1" />
-
-                        <div>
-                            <h3 className="text-sm font-medium text-zinc-400 mb-3">CAMERA SOURCE</h3>
-                            <div className="space-y-2">
-                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${cameraType === 'usb' ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
-                                    <input
-                                        type="radio"
-                                        name="camera"
-                                        value="usb"
-                                        checked={cameraType === 'usb'}
-                                        onChange={(e) => changeCameraType(e.target.value as any)}
-                                        disabled={isTraining}
-                                        className="w-4 h-4"
-                                    />
-                                    <div className="flex-1">
-                                        <div className="text-sm font-medium text-zinc-200">USB Camera</div>
-                                        <div className="text-xs text-zinc-500">Direct USB webcam access</div>
-                                    </div>
-                                </label>
-
-                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${cameraType === 'csi' ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
-                                    <input
-                                        type="radio"
-                                        name="camera"
-                                        value="csi"
-                                        checked={cameraType === 'csi'}
-                                        onChange={(e) => changeCameraType(e.target.value as any)}
-                                        disabled={isTraining}
-                                        className="w-4 h-4"
-                                    />
-                                    <div className="flex-1">
-                                        <div className="text-sm font-medium text-zinc-200">CSI Camera</div>
-                                        <div className="text-xs text-zinc-500">Raspberry Pi camera module</div>
-                                    </div>
-                                </label>
-
-                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${cameraType === 'http' ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
-                                    <input
-                                        type="radio"
-                                        name="camera"
-                                        value="http"
-                                        checked={cameraType === 'http'}
-                                        onChange={(e) => changeCameraType(e.target.value as any)}
-                                        disabled={isTraining}
-                                        className="w-4 h-4"
-                                    />
-                                    <div className="flex-1">
-                                        <div className="text-sm font-medium text-zinc-200">HTTP Camera</div>
-                                        <div className="text-xs text-zinc-500">Remote webcam server</div>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div className="h-px bg-zinc-800 my-1" />
-
-                        <div className="text-xs text-zinc-500">
+                        <div className="text-xs text-zinc-500 p-4 bg-zinc-950 rounded-lg border border-zinc-800">
+                            <p className="mb-2">Training will use settings configured in the Settings tab.</p>
                             <p>Backbone: MobileNetV3</p>
                             <p>Loss: TripletMargin</p>
                         </div>

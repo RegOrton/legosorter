@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from train import training_manager, state
+from settings_manager import get_settings_manager
 import uvicorn
 import logging
 import cv2
@@ -9,6 +10,7 @@ import os
 from pathlib import Path
 from camera import Camera
 import torchvision.transforms as transforms
+from typing import Dict, Any
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -138,6 +140,75 @@ def set_camera_type(camera_type: str):
     except Exception as e:
         logger.error(f"Failed to set camera type: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to set camera type: {str(e)}")
+
+@app.get("/settings")
+def get_settings():
+    """Get all current settings."""
+    settings_manager = get_settings_manager()
+    return settings_manager.get_all()
+
+@app.post("/settings")
+def update_settings(settings: Dict[str, Any]):
+    """
+    Update settings and persist to disk.
+
+    Args:
+        settings: Dictionary of settings to update (dataset, epochs, batch_size, camera_type)
+    """
+    settings_manager = get_settings_manager()
+
+    # Validate settings
+    valid_datasets = ["ldraw", "ldview", "rebrickable"]
+    valid_cameras = ["usb", "csi", "http"]
+
+    if "dataset" in settings and settings["dataset"] not in valid_datasets:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid dataset. Must be one of: {valid_datasets}"
+        )
+
+    if "camera_type" in settings and settings["camera_type"] not in valid_cameras:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid camera_type. Must be one of: {valid_cameras}"
+        )
+
+    if "epochs" in settings:
+        try:
+            epochs = int(settings["epochs"])
+            if epochs < 1 or epochs > 100:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="epochs must be an integer between 1 and 100")
+
+    if "batch_size" in settings:
+        try:
+            batch_size = int(settings["batch_size"])
+            if batch_size < 1 or batch_size > 64:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="batch_size must be an integer between 1 and 64")
+
+    # Update settings
+    success = settings_manager.update(settings)
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to save settings")
+
+    logger.info(f"Settings updated: {settings}")
+    return {"message": "Settings updated successfully", "settings": settings_manager.get_all()}
+
+@app.post("/settings/reset")
+def reset_settings():
+    """Reset all settings to defaults."""
+    settings_manager = get_settings_manager()
+    success = settings_manager.reset()
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to reset settings")
+
+    logger.info("Settings reset to defaults")
+    return {"message": "Settings reset to defaults", "settings": settings_manager.get_all()}
 
 @app.post("/train/start")
 def start_training(epochs: int = 10, batch_size: int = 32, dataset: str = "ldraw"):
