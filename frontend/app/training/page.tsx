@@ -9,6 +9,7 @@ export default function TrainingPage() {
     const [dataset, setDataset] = useState<"ldraw" | "ldview" | "rebrickable">("ldraw");
     const [epochs, setEpochs] = useState(10);
     const [batchSize, setBatchSize] = useState(8);
+    const [cameraType, setCameraType] = useState<"usb" | "csi" | "http">("usb");
     const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
     const API_URL = "http://localhost:8000";
@@ -26,7 +27,34 @@ export default function TrainingPage() {
         }
     };
 
+    const fetchCameraType = async () => {
+        try {
+            const res = await fetch(`${API_URL}/camera/type`);
+            const data = await res.json();
+            if (data.camera_type) {
+                setCameraType(data.camera_type);
+            }
+        } catch (e) {
+            console.error("Failed to fetch camera type", e);
+        }
+    };
+
+    const changeCameraType = async (newType: "usb" | "csi" | "http") => {
+        try {
+            const res = await fetch(`${API_URL}/camera/type?camera_type=${newType}`, { method: 'POST' });
+            const data = await res.json();
+            if (data.camera_type) {
+                setCameraType(data.camera_type);
+            }
+        } catch (e) {
+            alert("Failed to change camera type: " + e);
+        }
+    };
+
     useEffect(() => {
+        // Fetch camera type on mount
+        fetchCameraType();
+
         // Poll status every second
         pollInterval.current = setInterval(fetchStatus, 1000);
         return () => {
@@ -240,6 +268,61 @@ export default function TrainingPage() {
                                         className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
                                     />
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="h-px bg-zinc-800 my-1" />
+
+                        <div>
+                            <h3 className="text-sm font-medium text-zinc-400 mb-3">CAMERA SOURCE</h3>
+                            <div className="space-y-2">
+                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${cameraType === 'usb' ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                    <input
+                                        type="radio"
+                                        name="camera"
+                                        value="usb"
+                                        checked={cameraType === 'usb'}
+                                        onChange={(e) => changeCameraType(e.target.value as any)}
+                                        disabled={isTraining}
+                                        className="w-4 h-4"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-sm font-medium text-zinc-200">USB Camera</div>
+                                        <div className="text-xs text-zinc-500">Direct USB webcam access</div>
+                                    </div>
+                                </label>
+
+                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${cameraType === 'csi' ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                    <input
+                                        type="radio"
+                                        name="camera"
+                                        value="csi"
+                                        checked={cameraType === 'csi'}
+                                        onChange={(e) => changeCameraType(e.target.value as any)}
+                                        disabled={isTraining}
+                                        className="w-4 h-4"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-sm font-medium text-zinc-200">CSI Camera</div>
+                                        <div className="text-xs text-zinc-500">Raspberry Pi camera module</div>
+                                    </div>
+                                </label>
+
+                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${cameraType === 'http' ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                    <input
+                                        type="radio"
+                                        name="camera"
+                                        value="http"
+                                        checked={cameraType === 'http'}
+                                        onChange={(e) => changeCameraType(e.target.value as any)}
+                                        disabled={isTraining}
+                                        className="w-4 h-4"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-sm font-medium text-zinc-200">HTTP Camera</div>
+                                        <div className="text-xs text-zinc-500">Remote webcam server</div>
+                                    </div>
+                                </label>
                             </div>
                         </div>
 

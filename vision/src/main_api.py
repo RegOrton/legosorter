@@ -95,6 +95,50 @@ def video_frame():
     
     raise HTTPException(status_code=500, detail="Failed to capture frame")
 
+@app.get("/camera/type")
+def get_camera_type():
+    """Get current camera type."""
+    cam = get_camera()
+    if cam is None:
+        return {"camera_type": None, "error": "Camera not initialized"}
+
+    return {
+        "camera_type": cam.camera_type,
+        "available_types": ["usb", "csi", "http"]
+    }
+
+@app.post("/camera/type")
+def set_camera_type(camera_type: str):
+    """
+    Set camera type and restart camera.
+
+    Args:
+        camera_type: Camera type - "usb", "csi", or "http"
+    """
+    from camera import CAMERA_USB, CAMERA_CSI, CAMERA_HTTP
+
+    valid_types = [CAMERA_USB, CAMERA_CSI, CAMERA_HTTP]
+    if camera_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid camera type. Must be one of: {valid_types}"
+        )
+
+    cam = get_camera()
+    if cam is None:
+        raise HTTPException(status_code=500, detail="Camera not initialized")
+
+    try:
+        cam.set_camera_type(camera_type)
+        logger.info(f"Camera type changed to: {camera_type}")
+        return {
+            "message": f"Camera type set to {camera_type}",
+            "camera_type": camera_type
+        }
+    except Exception as e:
+        logger.error(f"Failed to set camera type: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to set camera type: {str(e)}")
+
 @app.post("/train/start")
 def start_training(epochs: int = 10, batch_size: int = 32, dataset: str = "ldraw"):
     """
