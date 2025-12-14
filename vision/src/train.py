@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Dataset types
 DATASET_REBRICKABLE = "rebrickable"
 DATASET_LDRAW = "ldraw"
+DATASET_LDVIEW = "ldview"
 
 class TrainingState:
     def __init__(self):
@@ -109,6 +110,15 @@ class Trainer:
                     return
                 dataloader = get_ldraw_dataloader(ldraw_renders_dir, batch_size=batch_size, limit=limit)
                 state.log(f"Loaded LDraw dataset with {len(dataloader.dataset.parts)} parts")
+            elif dataset_type == DATASET_LDVIEW:
+                # LDView uses pre-generated images from generate_ldview_training_data.py
+                ldview_training_dir = Path(data_dir) / "ldview_training"
+                if not ldview_training_dir.exists():
+                    state.log("ERROR: LDView training images not found. Run generate_ldview_training_data.py first.")
+                    state.is_running = False
+                    return
+                dataloader = get_dataloader(ldview_training_dir, batch_size=batch_size, limit=limit)
+                state.log(f"Loaded LDView dataset from {ldview_training_dir}")
             else:
                 dataloader = get_dataloader(data_dir, batch_size=batch_size, limit=limit)
                 state.log("Loaded Rebrickable dataset")

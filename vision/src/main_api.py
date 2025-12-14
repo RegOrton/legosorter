@@ -103,10 +103,19 @@ def start_training(epochs: int = 10, batch_size: int = 32, dataset: str = "ldraw
     Args:
         epochs: Number of training epochs
         batch_size: Training batch size
-        dataset: Dataset type - "ldraw" (multi-view 3D renders) or "rebrickable" (single-view CGI)
+        dataset: Dataset type - "ldraw" (Python software renderer), "ldview" (LDView realistic renders), or "rebrickable" (Rebrickable on-the-fly synthesis)
     """
-    from train import DATASET_LDRAW, DATASET_REBRICKABLE
-    dataset_type = DATASET_LDRAW if dataset == "ldraw" else DATASET_REBRICKABLE
+    from train import DATASET_LDRAW, DATASET_REBRICKABLE, DATASET_LDVIEW
+
+    # Map dataset string to constant
+    dataset_map = {
+        "ldraw": DATASET_LDRAW,
+        "ldview": DATASET_LDVIEW,
+        "rebrickable": DATASET_REBRICKABLE
+    }
+
+    dataset_type = dataset_map.get(dataset, DATASET_LDRAW)
+
     success, msg = training_manager.start_training(
         epochs=epochs,
         batch_size=batch_size,

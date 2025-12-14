@@ -6,6 +6,9 @@ export default function TrainingPage() {
     const [status, setStatus] = useState<any>(null);
     const [images, setImages] = useState<any>(null);
     const [logs, setLogs] = useState<string[]>([]);
+    const [dataset, setDataset] = useState<"ldraw" | "ldview" | "rebrickable">("ldraw");
+    const [epochs, setEpochs] = useState(10);
+    const [batchSize, setBatchSize] = useState(8);
     const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
     const API_URL = "http://localhost:8000";
@@ -33,7 +36,7 @@ export default function TrainingPage() {
 
     const startTraining = async () => {
         try {
-            await fetch(`${API_URL}/train/start?epochs=10&batch_size=8`, { method: 'POST' });
+            await fetch(`${API_URL}/train/start?epochs=${epochs}&batch_size=${batchSize}&dataset=${dataset}`, { method: 'POST' });
             fetchStatus();
         } catch (e) {
             alert("Failed to start training: " + e);
@@ -155,9 +158,95 @@ export default function TrainingPage() {
 
                         <div className="h-px bg-zinc-800 my-1" />
 
+                        <div>
+                            <h3 className="text-sm font-medium text-zinc-400 mb-3">DATASET SOURCE</h3>
+                            <div className="space-y-2">
+                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${dataset === 'ldraw' ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                    <input
+                                        type="radio"
+                                        name="dataset"
+                                        value="ldraw"
+                                        checked={dataset === 'ldraw'}
+                                        onChange={(e) => setDataset(e.target.value as any)}
+                                        disabled={isTraining}
+                                        className="w-4 h-4"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-sm font-medium text-zinc-200">LDraw Python</div>
+                                        <div className="text-xs text-zinc-500">Software renderer, multi-view</div>
+                                    </div>
+                                </label>
+
+                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${dataset === 'ldview' ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                    <input
+                                        type="radio"
+                                        name="dataset"
+                                        value="ldview"
+                                        checked={dataset === 'ldview'}
+                                        onChange={(e) => setDataset(e.target.value as any)}
+                                        disabled={isTraining}
+                                        className="w-4 h-4"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-sm font-medium text-zinc-200">LDView Renders</div>
+                                        <div className="text-xs text-zinc-500">Pre-generated realistic 3D</div>
+                                    </div>
+                                </label>
+
+                                <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${dataset === 'rebrickable' ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                    <input
+                                        type="radio"
+                                        name="dataset"
+                                        value="rebrickable"
+                                        checked={dataset === 'rebrickable'}
+                                        onChange={(e) => setDataset(e.target.value as any)}
+                                        disabled={isTraining}
+                                        className="w-4 h-4"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-sm font-medium text-zinc-200">Rebrickable CGI</div>
+                                        <div className="text-xs text-zinc-500">On-the-fly synthesis</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="h-px bg-zinc-800 my-1" />
+
+                        <div>
+                            <h3 className="text-sm font-medium text-zinc-400 mb-3">TRAINING PARAMETERS</h3>
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="text-xs text-zinc-500 block mb-1">Epochs</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="100"
+                                        value={epochs}
+                                        onChange={(e) => setEpochs(parseInt(e.target.value) || 10)}
+                                        disabled={isTraining}
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-zinc-500 block mb-1">Batch Size</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="64"
+                                        value={batchSize}
+                                        onChange={(e) => setBatchSize(parseInt(e.target.value) || 8)}
+                                        disabled={isTraining}
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="h-px bg-zinc-800 my-1" />
+
                         <div className="text-xs text-zinc-500">
-                            <p>Training will use "On-the-Fly" synthesis.</p>
-                            <p className="mt-2">Backbone: MobileNetV3</p>
+                            <p>Backbone: MobileNetV3</p>
                             <p>Loss: TripletMargin</p>
                         </div>
                     </div>
