@@ -9,7 +9,10 @@
       "Bash(python:*)",
       "Bash(ls:*)",
       "Bash(git fetch:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd LDraw 3D parser and software renderer for multi-view training\n\n- ldraw_parser.py: Parse .dat files, resolve subfile references, extract geometry\n- ldraw_renderer.py: Software 3D renderer with orthographic projection and shading\n- ldraw_dataset.py: PyTorch dataset for triplet training with multi-view renders\n- generate_ldraw_dataset.py: CLI to batch-generate training images\n- Update train.py and API to support LDraw dataset selection\n- Update CLAUDE.md with LDraw documentation\n\nGenerated 3,680 training images (94 parts × 5 colors × 8 viewpoints)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git merge:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
