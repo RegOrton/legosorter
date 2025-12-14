@@ -122,17 +122,20 @@ curl http://localhost:8000/inference/status
 
 ### Vision Service (`vision/src/`)
 
-- **`main_api.py`** - FastAPI server with endpoints for training, inference, video streaming
-- **`train.py`** - Training loop with threading, uses TrainingState for live updates
+- **`main_api.py`** - FastAPI server with endpoints for training, inference, video streaming, settings, and camera control
+- **`train.py`** - Training loop with threading, uses TrainingState for live updates, supports 3 dataset types
+- **`settings_manager.py`** - Persistent settings storage (dataset, epochs, batch_size, camera_type) saved to JSON
 - **`model.py`** - LegoEmbeddingNet (MobileNetV3 + metric learning)
-- **`dataset.py`** - LegoTripletDataset for triplet loss training
+- **`dataset.py`** - LegoTripletDataset for triplet loss training (Rebrickable on-the-fly synthesis)
 - **`synthesizer.py`** - LegoSynthesizer generates synthetic training samples with perspective transforms, shadows, and camera effects
 - **`generate_backgrounds.py`** - Generates synthetic background images (solid colors, gradients, textures) for training diversity
 - **`ldraw_parser.py`** - Parses LDraw .dat files and resolves subfile references to build 3D geometry
 - **`ldraw_renderer.py`** - Software 3D renderer for generating multi-view training images from LDraw models
 - **`ldraw_dataset.py`** - PyTorch dataset for training with multi-view LDraw renders
 - **`generate_ldraw_dataset.py`** - CLI tool to generate training images from LDraw library
-- **`camera.py`** - Camera wrapper that supports both direct cv2.VideoCapture and HTTP webcam client
+- **`ldview_renderer.py`** - LDView-based renderer for realistic 3D renders
+- **`generate_ldview_training_data.py`** - CLI to generate training data using LDView
+- **`camera.py`** - Camera wrapper supporting USB, CSI (Raspberry Pi), and HTTP webcam modes
 - **`webcam_client.py`** - WebcamClient class for fetching frames from Windows host
 - **`inference.py`** - Real-time inference engine (planned)
 - **`preprocessor.py`** - Image preprocessing utilities
@@ -141,15 +144,19 @@ curl http://localhost:8000/inference/status
 ### Frontend (`frontend/app/`)
 
 - **`page.tsx`** - Main dashboard (planned: inventory explorer, retrieval interface)
-- **`training/page.tsx`** - Training dashboard with live triplet visualization and logs
+- **`training/page.tsx`** - Training dashboard with live triplet visualization, logs, and navigation
+- **`settings/page.tsx`** - Settings page for configuring dataset, training parameters, and camera
 - **`layout.tsx`** - Root layout
 - **`globals.css`** - Tailwind CSS styles
 
 ### Data Directories
 
 - **`vision/data/`** - Training data (clean brick images, backgrounds, Rebrickable database)
+- **`vision/data/ldraw_renders/`** - LDraw Python software renderer output
+- **`vision/data/ldview_training/`** - LDView realistic 3D renders
 - **`vision/input/`** - Input images for processing
 - **`vision/output/`** - Generated outputs (models saved to `vision/output/models/`)
+- **`vision/output/settings.json`** - Persistent settings (dataset, epochs, batch_size, camera_type)
 - **`vision/output/debug/`** - Debug outputs (test frames, etc.)
 
 ## Key Technical Details
@@ -165,9 +172,9 @@ The model (MobileNetV3) learns to place similar bricks close in embedding space 
 
 ### Training Data Sources
 
-The system supports two training data sources:
+The system supports three training data sources (configurable via Settings page or API):
 
-#### 1. LDraw Multi-View Renders (Recommended)
+#### 1. LDraw Python Software Renderer (Default)
 
 Uses the [LDraw](https://www.ldraw.org/) 3D parts library to generate true multi-view training images:
 
@@ -192,34 +199,96 @@ python vision/src/generate_ldraw_dataset.py --num-parts 100 --views-per-color 8 
 - Consistent geometry across all angles
 - 23,000+ parts available in LDraw library
 
-#### 2. Rebrickable CGI (Legacy)
+#### 2. LDView Realistic 3D Renders
 
-Uses single-viewpoint CGI renders from Rebrickable with aggressive augmentation:
+Uses LDView command-line tool for photorealistic renders with proper lighting and shading:
+- Pre-generate training images from .dat files
+- Realistic lighting, shadows, and textures
+- Multiple camera angles per part
+
+**Setup:**
+```bash
+# Generate LDView training data
+python vision/src/generate_ldview_training_data.py \
+    --dat-dir vision/input/dat_files \
+    --output-dir vision/data/ldview_training \
+    --samples-per-part 20
+```
+
+See `vision/LDVIEW_RENDERER.md` for detailed LDView setup instructions.
+
+#### 3. Rebrickable On-the-Fly Synthesis
+
+Uses single-viewpoint CGI renders from Rebrickable with aggressive real-time augmentation:
 - Perspective transforms to simulate angle changes
 - Synthetic shadows and camera effects
-- Multiple backgrounds
+- Multiple backgrounds generated on-the-fly
 
 **Generate backgrounds:** `python vision/src/generate_backgrounds.py`
 **Test augmentations:** `python vision/src/test_synthesizer.py`
 
-### Starting Training
+### Persistent Settings System
 
-**Via API (default uses LDraw):**
+Settings are stored in `vision/output/settings.json` and persist across restarts:
+
+**Default Settings:**
+- Dataset: `ldraw` (LDraw Python renderer)
+- Epochs: `10`
+- Batch Size: `8`
+- Camera Type: `usb`
+
+**Configure via Settings Page:**
+Navigate to `http://localhost:3000/settings` to configure:
+- Dataset source (ldraw, ldview, rebrickable)
+- Training parameters (epochs, batch size)
+- Camera source (usb, csi, http)
+
+**Configure via API:**
 ```bash
-curl -X POST "http://localhost:8000/train/start?epochs=20&batch_size=16&dataset=ldraw"
-# Or use Rebrickable dataset:
-curl -X POST "http://localhost:8000/train/start?epochs=20&batch_size=16&dataset=rebrickable"
+# Get current settings
+curl http://localhost:8000/settings
+
+# Update settings
+curl -X POST http://localhost:8000/settings \
+  -H "Content-Type: application/json" \
+  -d '{"dataset": "ldview", "epochs": 20, "batch_size": 16, "camera_type": "http"}'
+
+# Reset to defaults
+curl -X POST http://localhost:8000/settings/reset
 ```
 
-**Via Frontend:** Navigate to `http://localhost:3000/training`
+### Starting Training
 
-### Camera Abstraction
+**Via Settings + Frontend (Recommended):**
+1. Configure settings at `http://localhost:3000/settings`
+2. Click "Save Settings"
+3. Navigate to `http://localhost:3000/training`
+4. Click "Start Training" (uses saved settings)
 
-The `Camera` class in `camera.py` automatically switches between:
-- **Direct capture**: `cv2.VideoCapture(0)` when running on Pi or native Linux
-- **HTTP webcam**: `WebcamClient` when `USE_HTTP_WEBCAM=true` (for Docker on Windows)
+**Via API:**
+```bash
+# Uses saved settings from settings.json
+curl -X POST "http://localhost:8000/train/start?epochs=20&batch_size=16&dataset=ldraw"
 
-Code using `Camera` doesn't need to know which mode is active.
+# Or specify parameters directly
+curl -X POST "http://localhost:8000/train/start?epochs=20&batch_size=16&dataset=ldview"
+```
+
+### Camera System
+
+The `Camera` class in `camera.py` supports three modes (switchable via Settings page or API):
+
+- **USB Camera** (`usb`): Direct USB webcam via `cv2.VideoCapture(0)`
+- **CSI Camera** (`csi`): Raspberry Pi camera module via GStreamer or V4L2
+- **HTTP Camera** (`http`): Remote webcam via `WebcamClient` (for Docker on Windows)
+
+**Switch camera via API:**
+```bash
+curl -X POST "http://localhost:8000/camera/type?camera_type=http"
+```
+
+**Switch camera via Settings page:**
+Navigate to `http://localhost:3000/settings` and select camera source.
 
 ## Important Conventions
 
@@ -280,7 +349,10 @@ The vision service reads:
 4. **Access dashboards**:
    - Main: http://localhost:3000
    - Training: http://localhost:3000/training
+   - Settings: http://localhost:3000/settings
    - Vision API docs: http://localhost:8000/docs
+
+**Note:** See `DASHBOARD_SETUP.md` for containerized deployment options.
 
 ### Testing Webcam Access
 
@@ -299,10 +371,14 @@ Completed:
 - ✅ Docker-based vision service with FastAPI
 - ✅ HTTP webcam streaming for Windows development
 - ✅ Metric learning model architecture (MobileNetV3)
+- ✅ Three dataset options: LDraw Python, LDView, Rebrickable
 - ✅ Synthetic data generation pipeline
 - ✅ Training API with live status updates
 - ✅ Frontend training dashboard with live visualization
+- ✅ Dedicated Settings page with persistent storage
+- ✅ Camera switching (USB, CSI, HTTP)
 - ✅ Video streaming endpoints
+- ✅ Settings management API
 
 In Progress:
 - 🚧 Inference engine refinement
