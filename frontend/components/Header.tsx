@@ -6,12 +6,15 @@ import { useState, useEffect } from "react";
 
 export function Header() {
     const pathname = usePathname();
-    const [visionApiHealthy, setVisionApiHealthy] = useState<boolean | null>(null);
+    const [visionApiHealthy, setVisionApiHealthy] = useState<boolean>(false);
 
     useEffect(() => {
         const checkVisionApi = async () => {
             try {
-                const res = await fetch('http://localhost:8000/health', { method: 'GET' });
+                const res = await fetch('http://localhost:8000/health', {
+                    method: 'GET',
+                    signal: AbortSignal.timeout(3000)
+                });
                 setVisionApiHealthy(res.ok);
             } catch (e) {
                 setVisionApiHealthy(false);
@@ -62,27 +65,21 @@ export function Header() {
                 <div className="flex items-center gap-3">
                     {/* Vision API Status */}
                     <div className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${
-                        visionApiHealthy === null
-                            ? "bg-zinc-900/50 border-zinc-700 opacity-50"
-                            : visionApiHealthy
+                        visionApiHealthy
                             ? "bg-emerald-500/10 border-emerald-500/50"
                             : "bg-red-500/10 border-red-500/50"
                     }`}>
                         <div className={`h-2 w-2 rounded-full ${
-                            visionApiHealthy === null
-                                ? "bg-zinc-500"
-                                : visionApiHealthy
+                            visionApiHealthy
                                 ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
                                 : "bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]"
                         }`} />
                         <span className={`text-xs font-medium ${
-                            visionApiHealthy === null
-                                ? "text-zinc-500"
-                                : visionApiHealthy
+                            visionApiHealthy
                                 ? "text-emerald-400"
                                 : "text-red-400"
                         }`}>
-                            {visionApiHealthy === null ? "Checking..." : visionApiHealthy ? "Vision API Online" : "Vision API Offline"}
+                            {visionApiHealthy ? "Vision API Online" : "Vision API Offline"}
                         </span>
                     </div>
 
