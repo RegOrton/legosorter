@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     xvfb \
     wget \
     unzip \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install LDView osmesa (headless) version from GitHub releases

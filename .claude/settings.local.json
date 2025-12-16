@@ -15,7 +15,17 @@
       "Bash(git merge:*)",
       "Bash(git commit:*)",
       "Bash(docker-compose build:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose exec:*)",
+      "Bash(timeout 10 docker-compose logs:*)",
+      "Bash(timeout 30 docker-compose:*)",
+      "Bash(timeout 20 docker-compose logs:*)",
+      "Bash(docker-compose:*)",
+      "Bash(git restore:*)",
+      "Bash(docker run:*)"
     ]
   }
 }
