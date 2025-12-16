@@ -29,6 +29,15 @@ class TrainingState:
         self.loss = 0.0
         self.logs = []
         self.latest_images = None # { 'anchor': b64, 'positive': b64, 'negative': b64 }
+        self.loss_history = []  # List of (epoch, loss) tuples
+        self.timing_stats = {
+            'data_generation': 0.0,
+            'forward_pass': 0.0,
+            'backward_pass': 0.0,
+            'total_time': 0.0
+        }
+        self.batch_number = 0
+        self.total_batches = 0
 
     def log(self, message):
         self.logs.append(message)
@@ -159,7 +168,14 @@ class Trainer:
                 batches = 0
                 epoch_start = time.time()
 
+                # Reset timing stats for this epoch
+                epoch_data_gen = 0.0
+                epoch_forward = 0.0
+                epoch_backward = 0.0
+                state.total_batches = len(dataloader)
+
                 for i, (anchor, positive, negative) in enumerate(dataloader):
+                    state.batch_number = i
                     if self.stop_event.is_set():
                         break
 
@@ -193,21 +209,60 @@ class Trainer:
                     total_loss += loss.item()
                     batches += 1
 
+                    # Accumulate timing stats
+                    epoch_data_gen += data_load_time
+                    epoch_forward += forward_time
+                    epoch_backward += backward_time
+
                     # Log detailed timing every 5 batches
                     if i % 5 == 0:
                         state.log(f"Batch {i}: Total={batch_total_time:.3f}s (Transfer={transfer_time:.3f}s, Forward={forward_time:.3f}s, Backward={backward_time:.3f}s) Loss={loss.item():.4f}")
-                    
-                    # Update metrics and image preview - EVERY BATCH for maximum flicker!
+
+                    # Update metrics and timing stats
                     state.loss = loss.item()
-                    try:
-                        # Cycle through all items in the batch for maximum visual feedback
-                        # Show different sample each batch
-                        sample_idx = i % batch_size
-                        state.latest_images = {
-                            'anchor': tensor_to_b64(anchor[sample_idx]),
-                            'positive': tensor_to_b64(positive[sample_idx]),
-                            'negative': tensor_to_b64(negative[sample_idx])
+
+                    # Update timing stats with percentages
+                    total_time_so_far = epoch_data_gen + epoch_forward + epoch_backward
+                    if total_time_so_far > 0:
+                        state.timing_stats = {
+                            'data_generation': (epoch_data_gen / total_time_so_far) * 100,
+                            'forward_pass': (epoch_forward / total_time_so_far) * 100,
+                            'backward_pass': (epoch_backward / total_time_so_far) * 100,
+                            'total_time': total_time_so_far
                         }
+
+                    # Cache batch tensors for continuous display
+                    try:
+                        # Convert all samples in batch to base64 once
+                        batch_images = []
+                        for sample_idx in range(anchor.size(0)):
+                            batch_images.append({
+                                'anchor': tensor_to_b64(anchor[sample_idx]),
+                                'positive': tensor_to_b64(positive[sample_idx]),
+                                'negative': tensor_to_b64(negative[sample_idx])
+                            })
+
+                        # Start background thread to continuously loop through samples
+                        # This keeps UI updating while next batch is being generated
+                        import threading
+                        import time as time_module
+
+                        def update_display():
+                            while state.is_running:
+                                for imgs in batch_images:
+                                    if not state.is_running:
+                                        break
+                                    state.latest_images = imgs
+                                    time_module.sleep(0.2)  # 200ms per sample
+
+                        # Stop previous display thread if exists
+                        if hasattr(state, 'display_thread') and state.display_thread and state.display_thread.is_alive():
+                            pass  # Will be replaced by new batch
+
+                        # Start new display thread
+                        state.display_thread = threading.Thread(target=update_display, daemon=True)
+                        state.display_thread.start()
+
                     except Exception as e:
                         # Don't crash training loop if preview fails
                         print(f"Preview error: {e}")
@@ -216,6 +271,12 @@ class Trainer:
                 avg_loss = total_loss / batches if batches > 0 else 0
                 time_per_batch = epoch_time / batches if batches > 0 else 0
                 state.log(f"Epoch {epoch+1} done in {epoch_time:.2f}s. Avg Loss: {avg_loss:.4f}, Time/Batch: {time_per_batch:.3f}s, Batches: {batches}")
+
+                # Add to loss history
+                state.loss_history.append({
+                    'epoch': epoch + 1,
+                    'loss': avg_loss
+                })
 
                 # Checkpoint
                 checkpoint_start = time.time()

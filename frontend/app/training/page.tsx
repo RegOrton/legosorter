@@ -38,8 +38,8 @@ export default function TrainingPage() {
         // Fetch settings on mount
         fetchSettings();
 
-        // Poll status every second
-        pollInterval.current = setInterval(fetchStatus, 1000);
+        // Poll status rapidly for flicker mode (200ms = 5 times per second)
+        pollInterval.current = setInterval(fetchStatus, 200);
         return () => {
             if (pollInterval.current) clearInterval(pollInterval.current);
         };
@@ -68,11 +68,136 @@ export default function TrainingPage() {
         }
     };
 
+    // Calculate progress percentage
+    const progressPercent = status?.total_batches > 0
+        ? (status.batch_number / status.total_batches) * 100
+        : 0;
+
     return (
         <div className="flex flex-col text-zinc-50 h-full">
             <main className="flex-1 p-6 grid grid-cols-1 md:grid-cols-12 gap-6 max-w-[1600px] mx-auto w-full">
                 {/* Left Column: Logs & Viz */}
                 <section className="col-span-1 md:col-span-8 flex flex-col gap-6">
+                    {/* Progress Bar */}
+                    {isTraining && (
+                        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+                            <div className="flex justify-between mb-2">
+                                <h3 className="text-sm font-bold text-zinc-400">EPOCH PROGRESS</h3>
+                                <span className="text-sm text-zinc-400">
+                                    Batch {status?.batch_number || 0} / {status?.total_batches || 0}
+                                </span>
+                            </div>
+                            <div className="w-full bg-zinc-800 rounded-full h-3 overflow-hidden">
+                                <div
+                                    className="bg-emerald-500 h-full transition-all duration-300"
+                                    style={{ width: `${progressPercent}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Loss History Graph */}
+                    {status?.loss_history && status.loss_history.length > 0 && (
+                        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+                            <h3 className="text-sm font-bold text-zinc-400 mb-4">LOSS HISTORY</h3>
+                            <div className="relative h-48">
+                                <svg viewBox="0 0 400 150" className="w-full h-full">
+                                    {/* Grid lines */}
+                                    {[0, 1, 2, 3, 4].map((i) => (
+                                        <line
+                                            key={i}
+                                            x1="0"
+                                            y1={i * 37.5}
+                                            x2="400"
+                                            y2={i * 37.5}
+                                            stroke="#27272a"
+                                            strokeWidth="1"
+                                        />
+                                    ))}
+
+                                    {/* Loss line */}
+                                    <polyline
+                                        points={status.loss_history.map((point: any, i: number) => {
+                                            const x = (i / Math.max(status.loss_history.length - 1, 1)) * 400;
+                                            const maxLoss = Math.max(...status.loss_history.map((p: any) => p.loss));
+                                            const y = 150 - (point.loss / maxLoss) * 140;
+                                            return `${x},${y}`;
+                                        }).join(' ')}
+                                        fill="none"
+                                        stroke="#10b981"
+                                        strokeWidth="2"
+                                    />
+
+                                    {/* Data points */}
+                                    {status.loss_history.map((point: any, i: number) => {
+                                        const x = (i / Math.max(status.loss_history.length - 1, 1)) * 400;
+                                        const maxLoss = Math.max(...status.loss_history.map((p: any) => p.loss));
+                                        const y = 150 - (point.loss / maxLoss) * 140;
+                                        return (
+                                            <circle
+                                                key={i}
+                                                cx={x}
+                                                cy={y}
+                                                r="3"
+                                                fill="#10b981"
+                                            />
+                                        );
+                                    })}
+                                </svg>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Timing Breakdown */}
+                    {status?.timing_stats && status.timing_stats.total_time > 0 && (
+                        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+                            <h3 className="text-sm font-bold text-zinc-400 mb-4">TIME BREAKDOWN</h3>
+                            <div className="space-y-3">
+                                <div>
+                                    <div className="flex justify-between mb-1">
+                                        <span className="text-xs text-zinc-500">Data Generation</span>
+                                        <span className="text-xs text-zinc-400">{status.timing_stats.data_generation.toFixed(1)}%</span>
+                                    </div>
+                                    <div className="w-full bg-zinc-800 rounded-full h-2">
+                                        <div
+                                            className="bg-blue-500 h-full rounded-full"
+                                            style={{ width: `${status.timing_stats.data_generation}%` }}
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="flex justify-between mb-1">
+                                        <span className="text-xs text-zinc-500">Forward Pass</span>
+                                        <span className="text-xs text-zinc-400">{status.timing_stats.forward_pass.toFixed(1)}%</span>
+                                    </div>
+                                    <div className="w-full bg-zinc-800 rounded-full h-2">
+                                        <div
+                                            className="bg-purple-500 h-full rounded-full"
+                                            style={{ width: `${status.timing_stats.forward_pass}%` }}
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="flex justify-between mb-1">
+                                        <span className="text-xs text-zinc-500">Backward Pass</span>
+                                        <span className="text-xs text-zinc-400">{status.timing_stats.backward_pass.toFixed(1)}%</span>
+                                    </div>
+                                    <div className="w-full bg-zinc-800 rounded-full h-2">
+                                        <div
+                                            className="bg-orange-500 h-full rounded-full"
+                                            style={{ width: `${status.timing_stats.backward_pass}%` }}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="pt-2 border-t border-zinc-800">
+                                    <div className="flex justify-between">
+                                        <span className="text-xs font-bold text-zinc-400">Total Time</span>
+                                        <span className="text-xs font-bold text-emerald-400">{status.timing_stats.total_time.toFixed(2)}s</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <div className="flex flex-col gap-4">
                         <h2 className="text-xl font-bold tracking-tight">Live Training Feed</h2>
 

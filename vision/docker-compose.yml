@@ -15,10 +15,10 @@ services:
       - USE_HTTP_WEBCAM=true
       - WEBCAM_SERVER_URL=http://host.docker.internal:5000
       - USE_MOCK_VIDEO=false
-      - LDRAWDIR=/usr/share/ldraw
+      - LDRAWDIR=/usr/share/ldraw/ldraw
     ports:
       - "8000:8000"
-    command: python src/main_api.py
+    command: python3 src/main_api.py
 
   # Service for generating training data with LDView
   training:
@@ -30,9 +30,9 @@ services:
       - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
-      - LDRAWDIR=/usr/share/ldraw
+      - LDRAWDIR=/usr/share/ldraw/ldraw
       - DAT_DIR=/app/input/dat_files
       - OUTPUT_DIR=/app/data/training
       - SAMPLES_PER_PART=20
       - OUTPUT_SIZE=224
-    command: python src/docker_generate_training.py
+    command: python3 src/docker_generate_training.py

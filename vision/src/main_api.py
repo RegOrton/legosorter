@@ -255,7 +255,11 @@ def get_status():
         "total_epochs": state.total_epochs,
         "loss": state.loss,
         "logs": state.logs[-10:], # Return last 10 logs
-        "images": state.latest_images
+        "images": state.latest_images,
+        "loss_history": state.loss_history,
+        "timing_stats": state.timing_stats,
+        "batch_number": state.batch_number,
+        "total_batches": state.total_batches
     }
 
 # Inference endpoints
