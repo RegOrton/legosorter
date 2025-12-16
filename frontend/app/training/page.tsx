@@ -1,10 +1,13 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 
 export default function TrainingPage() {
     const [isTraining, setIsTraining] = useState(false);
     const [status, setStatus] = useState<any>(null);
+    const [images, setImages] = useState<any>(null);
     const [logs, setLogs] = useState<string[]>([]);
+    const [settings, setSettings] = useState<any>(null);
     const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
     const API_URL = "http://localhost:8000";
@@ -16,12 +19,26 @@ export default function TrainingPage() {
             setStatus(data);
             setIsTraining(data.is_running);
             if (data.logs) setLogs(data.logs);
+            if (data.images) setImages(data.images);
         } catch (e) {
             console.error("Failed to fetch status", e);
         }
     };
 
+    const fetchSettings = async () => {
+        try {
+            const res = await fetch(`${API_URL}/settings`);
+            const data = await res.json();
+            setSettings(data);
+        } catch (e) {
+            console.error("Failed to fetch settings", e);
+        }
+    };
+
     useEffect(() => {
+        // Fetch settings on mount
+        fetchSettings();
+
         // Poll status every second
         pollInterval.current = setInterval(fetchStatus, 1000);
         return () => {
@@ -30,8 +47,13 @@ export default function TrainingPage() {
     }, []);
 
     const startTraining = async () => {
+        if (!settings) {
+            alert("Settings not loaded yet");
+            return;
+        }
+
         try {
-            await fetch(`${API_URL}/train/start?epochs=10&batch_size=16`, { method: 'POST' });
+            await fetch(`${API_URL}/train/start?epochs=${settings.epochs}&batch_size=${settings.batch_size}&dataset=${settings.dataset}`, { method: 'POST' });
             fetchStatus();
         } catch (e) {
             alert("Failed to start training: " + e);
@@ -49,11 +71,74 @@ export default function TrainingPage() {
 
     return (
         <div className="flex flex-col text-zinc-50 h-full">
+            {/* Header */}
+            <header className="border-b border-zinc-800 bg-zinc-950">
+                <div className="max-w-[1600px] mx-auto px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                        <h1 className="text-2xl font-bold tracking-tight">Training Dashboard</h1>
+                        <nav className="flex gap-4">
+                            <Link href="/training" className="text-sm text-emerald-400 font-medium">
+                                Training
+                            </Link>
+                            <Link href="/settings" className="text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
+                                Settings
+                            </Link>
+                        </nav>
+                    </div>
+                    {settings && (
+                        <div className="text-xs text-zinc-500">
+                            <span className="mr-4">Dataset: <span className="text-zinc-300">{settings.dataset}</span></span>
+                            <span className="mr-4">Epochs: <span className="text-zinc-300">{settings.epochs}</span></span>
+                            <span className="mr-4">Batch: <span className="text-zinc-300">{settings.batch_size}</span></span>
+                            <span>Camera: <span className="text-zinc-300">{settings.camera_type}</span></span>
+                        </div>
+                    )}
+                </div>
+            </header>
+
             <main className="flex-1 p-6 grid grid-cols-1 md:grid-cols-12 gap-6 max-w-[1600px] mx-auto w-full">
                 {/* Left Column: Logs & Viz */}
                 <section className="col-span-1 md:col-span-8 flex flex-col gap-6">
+                    <div className="flex flex-col gap-4">
+                        <h2 className="text-xl font-bold tracking-tight">Live Training Feed</h2>
+
+                        {/* Image Preview */}
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="flex flex-col gap-2">
+                                <span className="text-xs font-bold text-zinc-500 uppercase">Anchor</span>
+                                <div className="aspect-square bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden relative">
+                                    {images?.anchor ? (
+                                        <img src={`data:image/jpeg;base64,${images.anchor}`} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="absolute inset-0 flex items-center justify-center text-zinc-700 text-xs">Waiting...</div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <span className="text-xs font-bold text-zinc-500 uppercase">Positive</span>
+                                <div className="aspect-square bg-zinc-900 border border-emerald-900/50 rounded-lg overflow-hidden relative">
+                                    {images?.positive ? (
+                                        <img src={`data:image/jpeg;base64,${images.positive}`} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="absolute inset-0 flex items-center justify-center text-zinc-700 text-xs">Waiting...</div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <span className="text-xs font-bold text-zinc-500 uppercase">Negative</span>
+                                <div className="aspect-square bg-zinc-900 border border-red-900/50 rounded-lg overflow-hidden relative">
+                                    {images?.negative ? (
+                                        <img src={`data:image/jpeg;base64,${images.negative}`} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="absolute inset-0 flex items-center justify-center text-zinc-700 text-xs">Waiting...</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="flex flex-col gap-4 h-full">
-                        <h2 className="text-xl font-bold tracking-tight">Training Logs & Visuals</h2>
+                        <h2 className="text-xl font-bold tracking-tight">Logs</h2>
 
                         <div className="bg-zinc-950 rounded-xl border border-zinc-800 p-4 font-mono text-xs overflow-y-auto h-[500px] flex flex-col-reverse">
                             {logs.length === 0 && <span className="text-zinc-600 italic">No logs yet...</span>}
@@ -115,9 +200,9 @@ export default function TrainingPage() {
 
                         <div className="h-px bg-zinc-800 my-1" />
 
-                        <div className="text-xs text-zinc-500">
-                            <p>Training will use "On-the-Fly" synthesis.</p>
-                            <p className="mt-2">Backbone: MobileNetV3</p>
+                        <div className="text-xs text-zinc-500 p-4 bg-zinc-950 rounded-lg border border-zinc-800">
+                            <p className="mb-2">Training will use settings configured in the Settings tab.</p>
+                            <p>Backbone: MobileNetV3</p>
                             <p>Loss: TripletMargin</p>
                         </div>
                     </div>

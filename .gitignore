@@ -35,4 +35,7 @@ Thumbs.db
 
 # Data
 vision/data/rebrickable/
+vision/data/ldraw/
+vision/data/ldraw_renders/
 vision/output/
+vision/complete.zip

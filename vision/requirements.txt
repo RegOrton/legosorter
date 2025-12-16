@@ -1,3 +1,4 @@
+flask
 opencv-python-headless
 numpy
 requests
@@ -6,3 +7,4 @@ torch
 torchvision
 fastapi
 uvicorn
+tqdm

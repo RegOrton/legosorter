@@ -6,14 +6,33 @@ services:
       - ./input:/app/input
       - ./output:/app/output
       - ./data:/app/data
-    devices:
-      - /dev/video0:/dev/video0
-    privileged: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - USE_HTTP_WEBCAM=true
+      - WEBCAM_SERVER_URL=http://host.docker.internal:5000
       - USE_MOCK_VIDEO=false
+      - LDRAWDIR=/usr/share/ldraw
     ports:
       - "8000:8000"
     command: python src/main_api.py
+
+  # Service for generating training data with LDView
+  training:
+    build: .
+    volumes:
+      - ./src:/app/src
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LDRAWDIR=/usr/share/ldraw
+      - DAT_DIR=/app/input/dat_files
+      - OUTPUT_DIR=/app/data/training
+      - SAMPLES_PER_PART=20
+      - OUTPUT_SIZE=224
+    command: python src/docker_generate_training.py

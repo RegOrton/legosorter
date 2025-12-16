@@ -1,0 +1,9 @@
+# Windows Host Requirements
+# Install these on your Windows machine to run the webcam server
+#
+# Installation:
+#   pip install -r requirements-host.txt
+
+flask>=2.3.0
+opencv-python>=4.8.0
+numpy>=1.24.0
