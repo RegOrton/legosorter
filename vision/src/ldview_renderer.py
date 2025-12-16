@@ -144,7 +144,7 @@ class LDViewRenderer:
             output_path = tmp.name
 
         try:
-            # Build LDView command with realistic rendering options
+            # Build LDView command with balanced quality/speed
             cmd = [
                 self.ldview_path,
                 str(dat_path),
@@ -156,16 +156,10 @@ class LDViewRenderer:
                 "-SaveAlpha=1" if use_transparency else "-SaveAlpha=0",
                 "-SaveActualSize=0",  # Don't save at actual size
                 "-AutoCrop=0",  # Don't auto-crop
-                # Realistic rendering options
+                # Balanced rendering options (faster than high quality)
                 "-EdgeOnly=0",  # Show edges
-                "-ConditionalLines=1",  # Show conditional lines
-                "-HighQuality=1",  # High quality rendering
                 "-Lighting=1",  # Enable lighting
-                "-UseLighting=1",  # Use lighting model
-                "-Shading=1",  # Enable shading (6 = high quality)
-                "-EdgeThickness=1",  # Thin edges
-                "-LineSmoothing=1",  # Smooth edges/lines
-                "-AA=1",  # Anti-aliasing
+                "-Shading=1",  # Enable shading
             ]
 
             # Add LDraw directory if specified

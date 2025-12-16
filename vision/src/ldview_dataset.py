@@ -27,7 +27,7 @@ class LDViewTripletDataset(Dataset):
         dat_dir: Path,
         samples_per_epoch: int = 1000,
         background_path: str = None,
-        output_size: tuple = (448, 448)  # Increased from 224x224 to 448x448
+        output_size: tuple = (336, 336)  # Balanced resolution: 1.5x final size for quality
     ):
         """
         Args:
