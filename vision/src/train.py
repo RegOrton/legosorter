@@ -111,14 +111,29 @@ class Trainer:
                 dataloader = get_ldraw_dataloader(ldraw_renders_dir, batch_size=batch_size, limit=limit)
                 state.log(f"Loaded LDraw dataset with {len(dataloader.dataset.parts)} parts")
             elif dataset_type == DATASET_LDVIEW:
-                # LDView uses pre-generated images from generate_ldview_training_data.py
-                ldview_training_dir = Path(data_dir) / "ldview_training"
-                if not ldview_training_dir.exists():
-                    state.log("ERROR: LDView training images not found. Run generate_ldview_training_data.py first.")
+                # LDView generates images on-the-fly during training
+                from ldview_dataset import get_ldview_dataloader
+                dat_dir = Path(data_dir).parent / "input" / "dat_files"
+                if not dat_dir.exists():
+                    state.log(f"ERROR: .dat files directory not found at {dat_dir}")
+                    state.log("Please create the directory and add .dat files, or use a different dataset.")
                     state.is_running = False
                     return
-                dataloader = get_dataloader(ldview_training_dir, batch_size=batch_size, limit=limit)
-                state.log(f"Loaded LDView dataset from {ldview_training_dir}")
+                dat_files_count = len(list(dat_dir.glob("*.dat")))
+                if dat_files_count == 0:
+                    state.log(f"ERROR: No .dat files found in {dat_dir}")
+                    state.log("Please add .dat files to the directory, or use a different dataset.")
+                    state.is_running = False
+                    return
+                # Generate 1000 triplets per epoch on-the-fly
+                samples_per_epoch = limit if limit else 1000
+                dataloader = get_ldview_dataloader(
+                    dat_dir,
+                    batch_size=batch_size,
+                    samples_per_epoch=samples_per_epoch
+                )
+                state.log(f"Loaded LDView on-the-fly renderer with {dat_files_count} .dat files")
+                state.log(f"Will generate {samples_per_epoch} triplets per epoch in real-time")
             else:
                 dataloader = get_dataloader(data_dir, batch_size=batch_size, limit=limit)
                 state.log("Loaded Rebrickable dataset")
