@@ -45,7 +45,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip3 install --timeout=1000 --retries=10 --break-system-packages -r requirements.txt
+RUN pip3 install --timeout=1000 --retries=10 --break-system-packages --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY src/ ./src/
