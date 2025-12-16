@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 
 export default function SettingsPage() {
     const [dataset, setDataset] = useState<"ldraw" | "ldview" | "rebrickable">("ldraw");
@@ -87,23 +86,6 @@ export default function SettingsPage() {
 
     return (
         <div className="flex flex-col text-zinc-50 h-full">
-            {/* Header */}
-            <header className="border-b border-zinc-800 bg-zinc-950">
-                <div className="max-w-[1600px] mx-auto px-6 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-                        <nav className="flex gap-4">
-                            <Link href="/training" className="text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
-                                Training
-                            </Link>
-                            <Link href="/settings" className="text-sm text-emerald-400 font-medium">
-                                Settings
-                            </Link>
-                        </nav>
-                    </div>
-                </div>
-            </header>
-
             <main className="flex-1 p-6 max-w-[800px] mx-auto w-full">
                 <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 flex flex-col gap-6 shadow-lg">
 

@@ -31,6 +31,12 @@ export function Header() {
                     >
                         Training Center
                     </Link>
+                    <Link
+                        href="/settings"
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${isActive("/settings")}`}
+                    >
+                        Settings
+                    </Link>
                 </nav>
             </div>
 

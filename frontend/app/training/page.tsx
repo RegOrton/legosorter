@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
 
 export default function TrainingPage() {
     const [isTraining, setIsTraining] = useState(false);
@@ -71,31 +70,6 @@ export default function TrainingPage() {
 
     return (
         <div className="flex flex-col text-zinc-50 h-full">
-            {/* Header */}
-            <header className="border-b border-zinc-800 bg-zinc-950">
-                <div className="max-w-[1600px] mx-auto px-6 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                        <h1 className="text-2xl font-bold tracking-tight">Training Dashboard</h1>
-                        <nav className="flex gap-4">
-                            <Link href="/training" className="text-sm text-emerald-400 font-medium">
-                                Training
-                            </Link>
-                            <Link href="/settings" className="text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
-                                Settings
-                            </Link>
-                        </nav>
-                    </div>
-                    {settings && (
-                        <div className="text-xs text-zinc-500">
-                            <span className="mr-4">Dataset: <span className="text-zinc-300">{settings.dataset}</span></span>
-                            <span className="mr-4">Epochs: <span className="text-zinc-300">{settings.epochs}</span></span>
-                            <span className="mr-4">Batch: <span className="text-zinc-300">{settings.batch_size}</span></span>
-                            <span>Camera: <span className="text-zinc-300">{settings.camera_type}</span></span>
-                        </div>
-                    )}
-                </div>
-            </header>
-
             <main className="flex-1 p-6 grid grid-cols-1 md:grid-cols-12 gap-6 max-w-[1600px] mx-auto w-full">
                 {/* Left Column: Logs & Viz */}
                 <section className="col-span-1 md:col-span-8 flex flex-col gap-6">

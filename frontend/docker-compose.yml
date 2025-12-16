@@ -11,4 +11,6 @@ services:
       - "3000:3000"
     environment:
       - WATCHPACK_POLLING=true # Use polling for Windows dev file changes
+      - NEXT_TELEMETRY_DISABLED=1
+      - NODE_ENV=development
     command: sh -c "npm install && npm run dev -- -p 3000 -H 0.0.0.0"
