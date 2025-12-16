@@ -13,6 +13,11 @@ export default function Home() {
     const interval = setInterval(async () => {
       try {
         const res = await fetch('http://localhost:8000/inference/status');
+        if (!res.ok) {
+          // API offline - set inference status to offline
+          setInferenceStatus(null);
+          return;
+        }
         const data = await res.json();
         setInferenceStatus(data);
         if (data.current_prediction) {
@@ -22,7 +27,8 @@ export default function Home() {
         setBoundingBoxes(data.bounding_boxes || []);
         setCenterDetected(data.center_detected || false);
       } catch (e) {
-        console.error('Failed to fetch inference status', e);
+        // Silently fail - vision API is offline, which is expected
+        setInferenceStatus(null);
       }
     }, 1000);
 
@@ -35,10 +41,13 @@ export default function Home() {
       const res = await fetch('http://localhost:8000/inference/classify_now', {
         method: 'POST'
       });
+      if (!res.ok) {
+        throw new Error('Vision API offline');
+      }
       const data = await res.json();
       setClassification(data);
     } catch (e) {
-      console.error('Classification failed', e);
+      // Vision API is offline - this is expected if not running
     } finally {
       setIsClassifying(false);
     }
