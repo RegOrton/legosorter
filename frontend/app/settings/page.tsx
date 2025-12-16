@@ -13,7 +13,9 @@ export default function SettingsPage() {
 
     const loadSettings = async () => {
         try {
-            const res = await fetch(`${API_URL}/settings`);
+            const res = await fetch(`${API_URL}/settings`, {
+                signal: AbortSignal.timeout(3000)
+            });
             if (!res.ok) {
                 // Vision API offline - use defaults
                 return;
@@ -42,7 +44,8 @@ export default function SettingsPage() {
                     epochs,
                     batch_size: batchSize,
                     camera_type: cameraType
-                })
+                }),
+                signal: AbortSignal.timeout(3000)
             });
 
             if (!res.ok) {
@@ -72,7 +75,10 @@ export default function SettingsPage() {
         setSaveMessage(null);
 
         try {
-            const res = await fetch(`${API_URL}/settings/reset`, { method: 'POST' });
+            const res = await fetch(`${API_URL}/settings/reset`, {
+                method: 'POST',
+                signal: AbortSignal.timeout(3000)
+            });
 
             if (!res.ok) {
                 setSaveMessage("Vision API is offline - cannot reset settings");
