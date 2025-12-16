@@ -478,13 +478,13 @@ export default function Home() {
             </div>
             <div className="flex-1 font-mono text-[11px] text-zinc-400 overflow-y-auto space-y-1 custom-scrollbar">
               <div className="opacity-50">------------------ INIT ------------------</div>
-              <div><span className="text-zinc-600">[{new Date().toLocaleTimeString()}]</span> System modules loaded</div>
-              <div><span className="text-zinc-600">[{new Date().toLocaleTimeString()}]</span> <span className="text-emerald-500">Webcam connected</span></div>
+              <div><span className="text-zinc-600">[INIT]</span> System modules loaded</div>
+              <div><span className="text-zinc-600">[OK]</span> <span className="text-emerald-500">Webcam connected</span></div>
               {inferenceStatus?.is_running && (
-                <div><span className="text-zinc-600">[{new Date().toLocaleTimeString()}]</span> <span className="text-blue-500">Inference engine running</span></div>
+                <div><span className="text-zinc-600">[RUN]</span> <span className="text-blue-500">Inference engine running</span></div>
               )}
               {classification && (
-                <div><span className="text-zinc-600">[{new Date().toLocaleTimeString()}]</span> Detected: {classification.class_name} ({(classification.confidence * 100).toFixed(1)}%)</div>
+                <div><span className="text-zinc-600">[DETECT]</span> Detected: {classification.class_name} ({(classification.confidence * 100).toFixed(1)}%)</div>
               )}
             </div>
           </div>
