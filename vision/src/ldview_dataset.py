@@ -27,7 +27,7 @@ class LDViewTripletDataset(Dataset):
         dat_dir: Path,
         samples_per_epoch: int = 1000,
         background_path: str = None,
-        output_size: tuple = (224, 224)
+        output_size: tuple = (448, 448)  # Increased from 224x224 to 448x448
     ):
         """
         Args:
@@ -56,9 +56,11 @@ class LDViewTripletDataset(Dataset):
             background_path=background_path
         )
 
-        # Image transforms (normalization for MobileNetV3)
+        # Image transforms (resize to 224x224 for MobileNetV3, with normalization)
+        # We render at higher res (448x448) then downsample for better quality
         self.transform = transforms.Compose([
             transforms.ToTensor(),
+            transforms.Resize((224, 224), antialias=True),  # Downsample with antialiasing
             transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
@@ -75,31 +77,41 @@ class LDViewTripletDataset(Dataset):
         Returns:
             (anchor, positive, negative) tuple of tensors
         """
+        import time
+        triplet_start = time.time()
+
         # Select random .dat file for anchor and positive
         anchor_dat = random.choice(self.dat_files)
 
         # Generate anchor image with random viewpoint
+        anchor_start = time.time()
         anchor_img = self.renderer.generate_sample(
             str(anchor_dat),
             apply_augmentations=True
         )
+        anchor_time = time.time() - anchor_start
 
         # Generate positive image (same part, different viewpoint/augmentation)
+        positive_start = time.time()
         positive_img = self.renderer.generate_sample(
             str(anchor_dat),
             apply_augmentations=True
         )
+        positive_time = time.time() - positive_start
 
         # Select different .dat file for negative
         negative_dat = random.choice([f for f in self.dat_files if f != anchor_dat])
 
         # Generate negative image
+        negative_start = time.time()
         negative_img = self.renderer.generate_sample(
             str(negative_dat),
             apply_augmentations=True
         )
+        negative_time = time.time() - negative_start
 
         # Convert BGR to RGB (OpenCV returns BGR, torchvision expects RGB)
+        transform_start = time.time()
         anchor_img = anchor_img[:, :, ::-1].copy()
         positive_img = positive_img[:, :, ::-1].copy()
         negative_img = negative_img[:, :, ::-1].copy()
@@ -108,6 +120,13 @@ class LDViewTripletDataset(Dataset):
         anchor = self.transform(anchor_img)
         positive = self.transform(positive_img)
         negative = self.transform(negative_img)
+        transform_time = time.time() - transform_start
+
+        total_time = time.time() - triplet_start
+
+        # Log timing every 10 samples
+        if idx % 10 == 0:
+            logger.info(f"[DataGen {idx}] Total={total_time:.3f}s (Anchor={anchor_time:.3f}s, Pos={positive_time:.3f}s, Neg={negative_time:.3f}s, Transform={transform_time:.3f}s)")
 
         return anchor, positive, negative
 

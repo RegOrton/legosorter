@@ -153,27 +153,49 @@ class Trainer:
                 if self.stop_event.is_set():
                     state.log("Training interrupted by user.")
                     break
-                    
+
                 state.epoch = epoch + 1
                 total_loss = 0.0
                 batches = 0
-                
+                epoch_start = time.time()
+
                 for i, (anchor, positive, negative) in enumerate(dataloader):
-                    if self.stop_event.is_set(): 
+                    if self.stop_event.is_set():
                         break
 
+                    batch_start = time.time()
+
+                    # Timing: Data loading (done by dataloader before this point)
+                    data_load_time = time.time() - batch_start
+
+                    # Timing: GPU transfer
+                    transfer_start = time.time()
                     anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
-                    
+                    transfer_time = time.time() - transfer_start
+
+                    # Timing: Forward pass
+                    forward_start = time.time()
                     optimizer.zero_grad()
                     emb_a = model(anchor)
                     emb_p = model(positive)
                     emb_n = model(negative)
                     loss = criterion(emb_a, emb_p, emb_n)
+                    forward_time = time.time() - forward_start
+
+                    # Timing: Backward pass
+                    backward_start = time.time()
                     loss.backward()
                     optimizer.step()
-                    
+                    backward_time = time.time() - backward_start
+
+                    batch_total_time = time.time() - batch_start
+
                     total_loss += loss.item()
                     batches += 1
+
+                    # Log detailed timing every 5 batches
+                    if i % 5 == 0:
+                        state.log(f"Batch {i}: Total={batch_total_time:.3f}s (Transfer={transfer_time:.3f}s, Forward={forward_time:.3f}s, Backward={backward_time:.3f}s) Loss={loss.item():.4f}")
                     
                     # Update metrics and image preview
                     if i % 2 == 0: # Update frequently
@@ -189,11 +211,16 @@ class Trainer:
                             # Don't crash training loop if preview fails
                             print(f"Preview error: {e}")
                 
+                epoch_time = time.time() - epoch_start
                 avg_loss = total_loss / batches if batches > 0 else 0
-                state.log(f"Epoch {epoch+1} done. Avg Loss: {avg_loss:.4f}")
-                
+                time_per_batch = epoch_time / batches if batches > 0 else 0
+                state.log(f"Epoch {epoch+1} done in {epoch_time:.2f}s. Avg Loss: {avg_loss:.4f}, Time/Batch: {time_per_batch:.3f}s, Batches: {batches}")
+
                 # Checkpoint
+                checkpoint_start = time.time()
                 torch.save(model.state_dict(), save_path / f"lego_embedder_epoch_{epoch+1}.pth")
+                checkpoint_time = time.time() - checkpoint_start
+                state.log(f"Checkpoint saved in {checkpoint_time:.3f}s")
             
             if not self.stop_event.is_set():
                 state.log("Training Complete.")
