@@ -61,33 +61,17 @@ export function Header() {
                 </nav>
             </div>
 
-            <div className="ml-auto flex items-center gap-6">
-                <div className="flex items-center gap-3">
-                    {/* Vision API Status */}
-                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${
-                        visionApiHealthy
-                            ? "bg-emerald-500/10 border-emerald-500/50"
-                            : "bg-red-500/10 border-red-500/50"
-                    }`}>
-                        <div className={`h-2 w-2 rounded-full ${
-                            visionApiHealthy
-                                ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
-                                : "bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]"
-                        }`} />
-                        <span className={`text-xs font-medium ${
-                            visionApiHealthy
-                                ? "text-emerald-400"
-                                : "text-red-400"
-                        }`}>
-                            {visionApiHealthy ? "Vision API Online" : "Vision API Offline"}
-                        </span>
-                    </div>
+            <div className="ml-auto flex items-center gap-4">
+                {/* Vision API Status */}
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-red-500/10 border-red-500/50">
+                    <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-xs font-medium text-red-400">Vision API Offline</span>
+                </div>
 
-                    {/* Frontend Status */}
-                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800">
-                        <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-                        <span className="text-xs font-medium text-zinc-400">Frontend Online</span>
-                    </div>
+                {/* Frontend Status */}
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/50">
+                    <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="text-xs font-medium text-blue-400">Frontend Online</span>
                 </div>
             </div>
         </header>
