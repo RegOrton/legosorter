@@ -24,9 +24,9 @@ The system has 4 main components:
 ### System Requirements
 
 - **OS**: Development on Windows, Production on Raspberry Pi
-- **Docker**: Vision service runs in Docker container
+- **Docker**: Both vision service and frontend run in Docker containers (recommended)
 - **Python**: 3.7+ (for webcam server on Windows host)
-- **Node.js**: Required for Next.js frontend
+- **Node.js**: Optional - only required if running frontend locally (outside Docker)
 
 ### Webcam Setup (Windows + Docker)
 
@@ -47,6 +47,28 @@ python webcam_server.py
 ## Common Commands
 
 ### Frontend (Next.js)
+
+#### Docker Container (Recommended)
+
+```bash
+cd frontend
+
+# Start frontend in Docker container
+docker-compose up --build
+
+# Run in detached mode
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop container
+docker-compose down
+```
+
+**Frontend dashboard** runs on `http://localhost:3000` when container is running.
+
+#### Local Development (Alternative)
 
 ```bash
 cd frontend
@@ -327,7 +349,7 @@ The vision service reads:
 
 ## Development Workflow
 
-### Starting from Scratch
+### Starting from Scratch (Containerized - Recommended)
 
 1. **Start webcam server** (Windows terminal 1):
    ```bash
@@ -343,7 +365,7 @@ The vision service reads:
 3. **Start frontend** (terminal 3):
    ```bash
    cd frontend
-   npm run dev
+   docker-compose up --build
    ```
 
 4. **Access dashboards**:
@@ -352,7 +374,29 @@ The vision service reads:
    - Settings: http://localhost:3000/settings
    - Vision API docs: http://localhost:8000/docs
 
-**Note:** See `DASHBOARD_SETUP.md` for containerized deployment options.
+### Local Development (Alternative)
+
+If you prefer to run the frontend locally without Docker:
+
+1. **Start webcam server** (Windows terminal 1):
+   ```bash
+   python webcam_server.py
+   ```
+
+2. **Start vision API** (terminal 2):
+   ```bash
+   cd vision
+   docker-compose up --build
+   ```
+
+3. **Start frontend** (terminal 3):
+   ```bash
+   cd frontend
+   npm install  # First time only
+   npm run dev
+   ```
+
+**Note:** See [DASHBOARD_SETUP.md](./DASHBOARD_SETUP.md) for additional deployment options.
 
 ### Testing Webcam Access
 

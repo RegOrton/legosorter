@@ -1,5 +1,5 @@
-# Use Ubuntu for better graphics library support
-FROM ubuntu:22.04
+# Use Ubuntu 24.04 for LDView 4.6 compatibility
+FROM ubuntu:24.04
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -16,24 +16,21 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender1 \
-    libgl1-mesa-glx \
     libgl1-mesa-dri \
     libosmesa6 \
-    libfuse2 \
+    libglx0 \
     xvfb \
     wget \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install LDView from GitHub releases (AppImage)
+# Download and install LDView osmesa (headless) version from GitHub releases
 RUN cd /tmp && \
-    wget https://github.com/tcobbs/ldview/releases/download/v4.6/LDView-4.6-Linux-x86_64.AppImage -O ldview.AppImage 2>&1 && \
-    ls -lah ldview.AppImage && \
-    chmod +x ldview.AppImage && \
-    ./ldview.AppImage --appimage-extract && \
-    mv squashfs-root /opt/ldview && \
-    ln -s /opt/ldview/AppRun /usr/local/bin/ldview && \
-    rm ldview.AppImage
+    wget -q https://github.com/tcobbs/ldview/releases/download/v4.6/ldview-osmesa-4.6-ubuntu-24.04.amd64.deb && \
+    apt-get update && \
+    apt-get install -y ./ldview-osmesa-4.6-ubuntu-24.04.amd64.deb && \
+    rm ldview-osmesa-4.6-ubuntu-24.04.amd64.deb && \
+    rm -rf /var/lib/apt/lists/*
 
 # Download and install LDraw parts library
 RUN mkdir -p /usr/share/ldraw && \
@@ -48,8 +45,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip3 install --upgrade pip && \
-    pip3 install --no-cache-dir --timeout=1000 --retries=10 -r requirements.txt
+RUN pip3 install --timeout=1000 --retries=10 --break-system-packages -r requirements.txt
 
 # Copy source code
 COPY src/ ./src/
