@@ -63,14 +63,21 @@ export function Header() {
 
             <div className="ml-auto flex items-center gap-4">
                 {/* Vision API Status */}
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-red-500/10 border-red-500/50">
-                    <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                    <span className="text-xs font-medium text-red-400">Vision API Offline</span>
-                </div>
+                {visionApiHealthy ? (
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-green-500/10 border-green-500/50">
+                        <div className="h-2 w-2 rounded-full bg-green-500" />
+                        <span className="text-xs font-medium text-green-400">Vision API Online</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-red-500/10 border-red-500/50">
+                        <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-xs font-medium text-red-400">Vision API Offline</span>
+                    </div>
+                )}
 
                 {/* Frontend Status */}
                 <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/50">
-                    <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                    <div className="h-2 w-2 rounded-full bg-blue-500" />
                     <span className="text-xs font-medium text-blue-400">Frontend Online</span>
                 </div>
             </div>
