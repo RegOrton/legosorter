@@ -197,19 +197,20 @@ class Trainer:
                     if i % 5 == 0:
                         state.log(f"Batch {i}: Total={batch_total_time:.3f}s (Transfer={transfer_time:.3f}s, Forward={forward_time:.3f}s, Backward={backward_time:.3f}s) Loss={loss.item():.4f}")
                     
-                    # Update metrics and image preview
-                    if i % 2 == 0: # Update frequently
-                        state.loss = loss.item()
-                        try:
-                            # Capture the first item in the batch for preview
-                            state.latest_images = {
-                                'anchor': tensor_to_b64(anchor[0]),
-                                'positive': tensor_to_b64(positive[0]),
-                                'negative': tensor_to_b64(negative[0])
-                            }
-                        except Exception as e:
-                            # Don't crash training loop if preview fails
-                            print(f"Preview error: {e}")
+                    # Update metrics and image preview - EVERY BATCH for maximum flicker!
+                    state.loss = loss.item()
+                    try:
+                        # Cycle through all items in the batch for maximum visual feedback
+                        # Show different sample each batch
+                        sample_idx = i % batch_size
+                        state.latest_images = {
+                            'anchor': tensor_to_b64(anchor[sample_idx]),
+                            'positive': tensor_to_b64(positive[sample_idx]),
+                            'negative': tensor_to_b64(negative[sample_idx])
+                        }
+                    except Exception as e:
+                        # Don't crash training loop if preview fails
+                        print(f"Preview error: {e}")
                 
                 epoch_time = time.time() - epoch_start
                 avg_loss = total_loss / batches if batches > 0 else 0
