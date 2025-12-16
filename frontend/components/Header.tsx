@@ -2,9 +2,27 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
 
 export function Header() {
     const pathname = usePathname();
+    const [visionApiHealthy, setVisionApiHealthy] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        const checkVisionApi = async () => {
+            try {
+                const res = await fetch('http://localhost:8000/health', { method: 'GET' });
+                setVisionApiHealthy(res.ok);
+            } catch (e) {
+                setVisionApiHealthy(false);
+            }
+        };
+
+        // Check immediately and then every 5 seconds
+        checkVisionApi();
+        const interval = setInterval(checkVisionApi, 5000);
+        return () => clearInterval(interval);
+    }, []);
 
     const isActive = (path: string) => {
         return pathname === path ? "bg-zinc-800 text-white" : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900";
@@ -41,9 +59,38 @@ export function Header() {
             </div>
 
             <div className="ml-auto flex items-center gap-6">
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800">
-                    <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                    <span className="text-xs font-medium text-zinc-400">System Online</span>
+                <div className="flex items-center gap-3">
+                    {/* Vision API Status */}
+                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${
+                        visionApiHealthy === null
+                            ? "bg-zinc-900/50 border-zinc-700 opacity-50"
+                            : visionApiHealthy
+                            ? "bg-emerald-500/10 border-emerald-500/50"
+                            : "bg-red-500/10 border-red-500/50"
+                    }`}>
+                        <div className={`h-2 w-2 rounded-full ${
+                            visionApiHealthy === null
+                                ? "bg-zinc-500"
+                                : visionApiHealthy
+                                ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                                : "bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+                        }`} />
+                        <span className={`text-xs font-medium ${
+                            visionApiHealthy === null
+                                ? "text-zinc-500"
+                                : visionApiHealthy
+                                ? "text-emerald-400"
+                                : "text-red-400"
+                        }`}>
+                            {visionApiHealthy === null ? "Checking..." : visionApiHealthy ? "Vision API Online" : "Vision API Offline"}
+                        </span>
+                    </div>
+
+                    {/* Frontend Status */}
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800">
+                        <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                        <span className="text-xs font-medium text-zinc-400">Frontend Online</span>
+                    </div>
                 </div>
             </div>
         </header>
