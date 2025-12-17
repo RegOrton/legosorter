@@ -2,6 +2,7 @@ import cv2
 import time
 import logging
 import os
+import threading
 from webcam_client import create_webcam_capture
 
 # Camera type constants
@@ -28,6 +29,7 @@ class Camera:
         self.logger = logging.getLogger(__name__)
         self.video_file = video_file
         self.playback_speed = playback_speed
+        self._lock = threading.Lock()  # Thread-safe access to video capture
         self.frame_delay = None  # Will be calculated based on video FPS
         self.last_frame_time = 0
 
@@ -132,38 +134,52 @@ class Camera:
 
     def get_frame(self):
         """
-        Captures a single frame.
+        Captures a single frame (thread-safe).
         :return: (success, frame)
         """
-        if not self.cap or not self.cap.isOpened():
-            self.logger.warning("Camera not opened, attempting to restart...")
-            self.start()
+        with self._lock:
+            if not self.cap or not self.cap.isOpened():
+                self.logger.warning("Camera not opened, attempting to restart...")
+                self.start()
 
-        ret, frame = self.cap.read()
+            try:
+                ret, frame = self.cap.read()
+            except Exception as e:
+                self.logger.error(f"Exception while reading frame: {e}")
+                return False, None
 
-        # Handle video file looping
-        if not ret and self.camera_type == CAMERA_VIDEO_FILE:
-            self.logger.info("Video file reached end, looping back to start")
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            ret, frame = self.cap.read()
-            self.last_frame_time = time.time()
+            # Handle video file looping
+            if not ret and self.camera_type == CAMERA_VIDEO_FILE:
+                self.logger.info("Video file reached end, looping back to start")
+                try:
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = self.cap.read()
+                    self.last_frame_time = time.time()
+                except Exception as e:
+                    self.logger.error(f"Exception while looping video: {e}")
+                    return False, None
 
-        if not ret:
-            self.logger.warning("Failed to read frame")
-            return False, None
+            if not ret:
+                self.logger.warning("Failed to read frame")
+                return False, None
 
-        # Handle playback speed timing for video files
-        if self.camera_type == CAMERA_VIDEO_FILE and self.frame_delay:
-            current_time = time.time()
-            elapsed = current_time - self.last_frame_time
+            # Validate frame data
+            if frame is None or frame.size == 0:
+                self.logger.warning("Invalid frame data received")
+                return False, None
 
-            # If we're reading too fast, sleep to match desired playback speed
-            if elapsed < self.frame_delay:
-                time.sleep(self.frame_delay - elapsed)
+            # Handle playback speed timing for video files
+            if self.camera_type == CAMERA_VIDEO_FILE and self.frame_delay:
+                current_time = time.time()
+                elapsed = current_time - self.last_frame_time
 
-            self.last_frame_time = time.time()
+                # If we're reading too fast, sleep to match desired playback speed
+                if elapsed < self.frame_delay:
+                    time.sleep(self.frame_delay - elapsed)
 
-        return True, frame
+                self.last_frame_time = time.time()
+
+            return True, frame
 
     def release(self):
         """Releases the camera resource."""

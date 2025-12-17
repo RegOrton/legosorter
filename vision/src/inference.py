@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 from model import LegoEmbeddingNet
+from background_diff_detector import BackgroundDiffDetector
 import cv2
 import numpy as np
 from pathlib import Path
@@ -52,7 +53,7 @@ class AutoState(Enum):
 
 class InferenceState:
     """Shared state for inference results."""
-    
+
     def __init__(self):
         self.is_running = False
         self.predictions = []  # List of recent predictions
@@ -62,11 +63,19 @@ class InferenceState:
         self.error = None
         self.bounding_boxes = []  # List of detected bounding boxes
         self.center_detected = False  # True if object detected in center
-        
+
         # New State Machine fields
         self.mode = InferenceMode.AUTO.value
         self.auto_state = AutoState.WAITING.value
         self.last_classification_time = 0.0
+
+        # Calibration state
+        self.is_calibrated = False
+        self.calibration_status = "Not calibrated"
+
+        # Stability tracking for better detection
+        self.last_bbox_center = None
+        self.stability_frame_count = 0
 
 
 class InferenceEngine:
@@ -76,10 +85,10 @@ class InferenceEngine:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.num_classes = num_classes
         self.class_names = class_names or [f"Class_{i}" for i in range(num_classes)]
-        
+
         # Load model
         self.model = LegoClassifier(embedding_dim=128, num_classes=num_classes).to(self.device)
-        
+
         if model_path and Path(model_path).exists():
             try:
                 # Load embedding weights
@@ -88,48 +97,92 @@ class InferenceEngine:
                 logger.info(f"Loaded model from {model_path}")
             except Exception as e:
                 logger.warning(f"Could not load model: {e}. Using untrained model.")
-        
+
         self.model.eval()
-        
+
         # Image preprocessing
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                std=[0.229, 0.224, 0.225])
         ])
-        
+
         self.state = InferenceState()
         self.stop_event = threading.Event()
         self.trigger_event = threading.Event() # For manual trigger
-        
+
         self.thread = None
         self.camera = None
-        
+
         # FPS tracking
         self.frame_times = deque(maxlen=30)
-        
-        # Background subtractor for object detection
-        self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
-            history=500, varThreshold=16, detectShadows=False
+
+        # Fast background differencing detector (replaces MOG2)
+        self.detector = BackgroundDiffDetector(
+            min_area=1000,
+            max_area=50000,
+            diff_threshold=30,
+            center_tolerance=0.15,
+            edge_margin=20,
+            min_aspect_ratio=0.3,
+            max_aspect_ratio=3.0
         )
-        self.frame_buffer = deque(maxlen=10)  # Buffer for background learning
-        
+
         # Stability params
         self.stability_counter = 0
-        self.stability_threshold = 5 # frames
+        self.stability_threshold = 8  # frames required for stability
+        self.position_tolerance = 5  # pixels of movement allowed
     
+    def calibrate_background(self, frame):
+        """
+        Calibrate background from current frame.
+
+        Call this when frame shows only the background (no objects).
+
+        Args:
+            frame: Input frame (BGR)
+
+        Returns:
+            Tuple of (success, message)
+        """
+        success = self.detector.calibrate(frame)
+        self.state.is_calibrated = success
+
+        if success:
+            self.state.calibration_status = "Calibrated"
+            logger.info("Background calibration successful")
+            return True, "Background calibrated successfully"
+        else:
+            self.state.calibration_status = "Calibration failed"
+            return False, "Failed to calibrate background"
+
+    def recalibrate_background(self):
+        """Reset calibration."""
+        self.detector.reset_calibration()
+        self.state.is_calibrated = False
+        self.state.calibration_status = "Not calibrated"
+        self.stability_counter = 0
+        logger.info("Background calibration reset")
+        return True, "Calibration reset"
+
+    def get_calibration_status(self):
+        """Get detailed calibration status."""
+        return self.detector.get_calibration_status()
+
     def set_mode(self, mode_str):
         """Set inference mode (auto/manual)."""
         try:
             new_mode = InferenceMode(mode_str)
             self.state.mode = new_mode.value
             logger.info(f"Switched inference mode to: {new_mode.value}")
-            
+
             # Reset internal state on mode switch
             self.state.auto_state = AutoState.WAITING.value
             self.stability_counter = 0
+            self.state.last_bbox_center = None
+            self.state.stability_frame_count = 0
             return True, f"Mode set to {mode_str}"
         except ValueError:
             return False, f"Invalid mode: {mode_str}"
@@ -174,62 +227,40 @@ class InferenceEngine:
         return True, "Inference stopped"
     
     def _detect_objects(self, frame):
-        """Detect objects in frame using background subtraction and contour detection."""
-        h, w = frame.shape[:2]
-        frame_center_x, frame_center_y = w // 2, h // 2
-        
-        # Apply background subtraction
-        fg_mask = self.bg_subtractor.apply(frame)
-        
-        # Morphological operations to reduce noise
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
-        
-        # Find contours
-        contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        bounding_boxes = []
-        center_detected = False
-        
-        # Process each contour
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            
-            # Filter small contours (noise) and very large ones (background)
-            if area < 500 or area > (w * h * 0.5):
-                continue
-            
-            # Get bounding box
-            x, y, box_w, box_h = cv2.boundingRect(contour)
-            
-            # Calculate bbox center
-            bbox_center_x = x + box_w // 2
-            bbox_center_y = y + box_h // 2
-            
-            # Check if bbox center is within 20% of frame center
-            center_threshold_x = w * 0.2
-            center_threshold_y = h * 0.2
-            
-            is_centered = (
-                abs(bbox_center_x - frame_center_x) < center_threshold_x and
-                abs(bbox_center_y - frame_center_y) < center_threshold_y
-            )
-            
-            if is_centered:
-                center_detected = True
-            
-            bounding_boxes.append({
-                'x': int(x),
-                'y': int(y),
-                'width': int(box_w),
-                'height': int(box_h),
-                'center_x': int(bbox_center_x),
-                'center_y': int(bbox_center_y),
-                'area': int(area),
-                'is_centered': is_centered
-            })
-        
+        """Detect objects in frame using fast background differencing."""
+        if not self.state.is_calibrated:
+            return [], False
+
+        bounding_boxes, center_detected, status = self.detector.detect(frame)
+
+        # Add stability tracking for better filtering
+        for bbox in bounding_boxes:
+            if bbox['is_centered'] and not bbox['touches_edge'] and bbox['aspect_ratio_valid']:
+                # Track stability of centered object
+                current_center = (bbox['center_x'], bbox['center_y'])
+
+                if self.state.last_bbox_center is None:
+                    self.state.last_bbox_center = current_center
+                    self.state.stability_frame_count = 1
+                else:
+                    # Check if position is stable
+                    dx = abs(current_center[0] - self.state.last_bbox_center[0])
+                    dy = abs(current_center[1] - self.state.last_bbox_center[1])
+
+                    if dx <= self.position_tolerance and dy <= self.position_tolerance:
+                        self.state.stability_frame_count += 1
+                    else:
+                        self.state.stability_frame_count = 1
+                        self.state.last_bbox_center = current_center
+
+                bbox['is_stable'] = self.state.stability_frame_count >= self.stability_threshold
+                bbox['stability_counter'] = self.state.stability_frame_count
+            else:
+                bbox['is_stable'] = False
+                bbox['stability_counter'] = 0
+                self.state.last_bbox_center = None
+                self.state.stability_frame_count = 0
+
         return bounding_boxes, center_detected
     
     def _run_classifier(self, frame):
@@ -275,7 +306,7 @@ class InferenceEngine:
     def _process_frame(self, frame):
         """Process a single frame for inference logic."""
         try:
-             # Preprocess / Detect objects (ALWAYS RUN for UI feedback)
+            # Preprocess / Detect objects (ALWAYS RUN for UI feedback)
             bounding_boxes, center_detected = self._detect_objects(frame)
             self.state.bounding_boxes = bounding_boxes
             self.state.center_detected = center_detected
@@ -287,22 +318,30 @@ class InferenceEngine:
                     logger.info("Executing manual trigger...")
                     self._run_classifier(frame)
                     self.trigger_event.clear()
-                    
+
             elif self.state.mode == InferenceMode.AUTO.value:
-                # Auto Mode Logic
-                
-                if center_detected:
+                # Auto Mode Logic - classify when object is stable and centered
+
+                # Check if any bbox is stable and centered
+                is_stable_and_centered = any(
+                    bbox.get('is_stable', False) and
+                    bbox.get('is_centered', False) and
+                    not bbox.get('touches_edge', False) and
+                    bbox.get('aspect_ratio_valid', True)
+                    for bbox in bounding_boxes
+                )
+
+                if is_stable_and_centered:
                     if self.state.auto_state == AutoState.WAITING.value:
                         self.state.auto_state = AutoState.STABILIZING.value
                         self.stability_counter = 1
                     elif self.state.auto_state == AutoState.STABILIZING.value:
-                        self.stability_counter += 1
-                        if self.stability_counter >= self.stability_threshold:
-                            # Stable! Classify now.
-                            self._run_classifier(frame)
-                            self.state.auto_state = AutoState.CLASSIFIED.value
+                        # Already stabilizing, just run classifier
+                        self._run_classifier(frame)
+                        self.state.auto_state = AutoState.CLASSIFIED.value
+                        logger.info("Object stable and centered - classifying")
                 else:
-                    # No center object
+                    # No stable centered object
                     self.stability_counter = 0
                     if self.state.auto_state == AutoState.CLASSIFIED.value:
                         # Object left, re-arm
@@ -311,6 +350,7 @@ class InferenceEngine:
                     elif self.state.auto_state == AutoState.STABILIZING.value:
                         # Lost tracking before stable
                         self.state.auto_state = AutoState.WAITING.value
+
             return True
 
         except Exception as e:

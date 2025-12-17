@@ -10,6 +10,8 @@ export default function Home() {
   const [centerDetected, setCenterDetected] = useState(false);
   const [videoKey, setVideoKey] = useState(0); // Key to force video reload
   const videoRef = useRef<HTMLImageElement>(null);
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibrationStatus, setCalibrationStatus] = useState<any>(null);
 
   // Poll inference status every second
   useEffect(() => {
@@ -41,6 +43,23 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
+  // Poll calibration status
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('http://localhost:8000/inference/calibration_status');
+        if (res.ok) {
+          const data = await res.json();
+          setCalibrationStatus(data);
+        }
+      } catch (e) {
+        // Silently fail
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const classifyNow = async () => {
     setIsClassifying(true);
     try {
@@ -65,6 +84,35 @@ export default function Home() {
       setInferenceMode(mode);
     } catch (e) {
       console.error('Failed to set mode', e);
+    }
+  };
+
+  const calibrateBackground = async () => {
+    setIsCalibrating(true);
+    try {
+      const res = await fetch('http://localhost:8000/inference/calibrate', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setCalibrationStatus(data);
+      } else {
+        console.error('Calibration failed');
+      }
+    } catch (e) {
+      console.error('Failed to calibrate', e);
+    } finally {
+      setIsCalibrating(false);
+    }
+  };
+
+  const resetCalibration = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/inference/recalibrate', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setCalibrationStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to reset calibration', e);
     }
   };
 
@@ -130,64 +178,99 @@ export default function Home() {
               </g>
 
               {/* Bounding boxes */}
-              {boundingBoxes.map((bbox: any, idx: number) => (
-                <g key={idx} className="animate-in fade-in duration-200">
-                  {/* Bounding box rectangle */}
-                  <rect
-                    x={bbox.x}
-                    y={bbox.y}
-                    width={bbox.width}
-                    height={bbox.height}
-                    fill="none"
-                    stroke={bbox.is_centered ? "#10b981" : "#3b82f6"}
-                    strokeWidth="2"
-                    className="transition-all duration-300"
-                  />
+              {boundingBoxes.map((bbox: any, idx: number) => {
+                // Determine color based on validation status
+                let strokeColor = '#6b7280'; // gray - invalid
+                let labelText = 'INVALID';
+                let labelBg = '#6b7280';
 
-                  {/* Corner accents */}
-                  <line x1={bbox.x} y1={bbox.y} x2={bbox.x + 15} y2={bbox.y} stroke={bbox.is_centered ? "#10b981" : "#3b82f6"} strokeWidth="3" />
-                  <line x1={bbox.x} y1={bbox.y} x2={bbox.x} y2={bbox.y + 15} stroke={bbox.is_centered ? "#10b981" : "#3b82f6"} strokeWidth="3" />
+                if (bbox.is_stable && bbox.is_centered) {
+                  strokeColor = '#10b981'; // emerald - ready
+                  labelText = 'READY';
+                  labelBg = '#10b981';
+                } else if (bbox.is_centered && !bbox.touches_edge && bbox.aspect_ratio_valid) {
+                  strokeColor = '#3b82f6'; // blue - stabilizing
+                  labelText = 'STABILIZING';
+                  labelBg = '#3b82f6';
+                } else if (bbox.touches_edge) {
+                  strokeColor = '#ef4444'; // red - edge touch
+                  labelText = 'EDGE TOUCH';
+                  labelBg = '#ef4444';
+                }
 
-                  <line x1={bbox.x + bbox.width} y1={bbox.y} x2={bbox.x + bbox.width - 15} y2={bbox.y} stroke={bbox.is_centered ? "#10b981" : "#3b82f6"} strokeWidth="3" />
-                  <line x1={bbox.x + bbox.width} y1={bbox.y} x2={bbox.x + bbox.width} y2={bbox.y + 15} stroke={bbox.is_centered ? "#10b981" : "#3b82f6"} strokeWidth="3" />
+                return (
+                  <g key={idx} className="animate-in fade-in duration-200">
+                    {/* Bounding box rectangle */}
+                    <rect
+                      x={bbox.x}
+                      y={bbox.y}
+                      width={bbox.width}
+                      height={bbox.height}
+                      fill="none"
+                      stroke={strokeColor}
+                      strokeWidth="2"
+                      className="transition-all duration-300"
+                    />
 
-                  <line x1={bbox.x} y1={bbox.y + bbox.height} x2={bbox.x + 15} y2={bbox.y + bbox.height} stroke={bbox.is_centered ? "#10b981" : "#3b82f6"} strokeWidth="3" />
-                  <line x1={bbox.x} y1={bbox.y + bbox.height} x2={bbox.x} y2={bbox.y + bbox.height - 15} stroke={bbox.is_centered ? "#10b981" : "#3b82f6"} strokeWidth="3" />
+                    {/* Corner accents */}
+                    <line x1={bbox.x} y1={bbox.y} x2={bbox.x + 15} y2={bbox.y} stroke={strokeColor} strokeWidth="3" />
+                    <line x1={bbox.x} y1={bbox.y} x2={bbox.x} y2={bbox.y + 15} stroke={strokeColor} strokeWidth="3" />
 
-                  <line x1={bbox.x + bbox.width} y1={bbox.y + bbox.height} x2={bbox.x + bbox.width - 15} y2={bbox.y + bbox.height} stroke={bbox.is_centered ? "#10b981" : "#3b82f6"} strokeWidth="3" />
-                  <line x1={bbox.x + bbox.width} y1={bbox.y + bbox.height} x2={bbox.x + bbox.width} y2={bbox.y + bbox.height - 15} stroke={bbox.is_centered ? "#10b981" : "#3b82f6"} strokeWidth="3" />
+                    <line x1={bbox.x + bbox.width} y1={bbox.y} x2={bbox.x + bbox.width - 15} y2={bbox.y} stroke={strokeColor} strokeWidth="3" />
+                    <line x1={bbox.x + bbox.width} y1={bbox.y} x2={bbox.x + bbox.width} y2={bbox.y + 15} stroke={strokeColor} strokeWidth="3" />
 
-                  {/* Center point of bbox */}
-                  <circle
-                    cx={bbox.center_x}
-                    cy={bbox.center_y}
-                    r="3"
-                    fill={bbox.is_centered ? "#10b981" : "#3b82f6"}
-                  />
+                    <line x1={bbox.x} y1={bbox.y + bbox.height} x2={bbox.x + 15} y2={bbox.y + bbox.height} stroke={strokeColor} strokeWidth="3" />
+                    <line x1={bbox.x} y1={bbox.y + bbox.height} x2={bbox.x} y2={bbox.y + bbox.height - 15} stroke={strokeColor} strokeWidth="3" />
 
-                  {/* Label background */}
-                  <rect
-                    x={bbox.x}
-                    y={bbox.y - 20}
-                    width={80}
-                    height={18}
-                    fill={bbox.is_centered ? "#10b981" : "#3b82f6"}
-                    opacity="0.9"
-                  />
+                    <line x1={bbox.x + bbox.width} y1={bbox.y + bbox.height} x2={bbox.x + bbox.width - 15} y2={bbox.y + bbox.height} stroke={strokeColor} strokeWidth="3" />
+                    <line x1={bbox.x + bbox.width} y1={bbox.y + bbox.height} x2={bbox.x + bbox.width} y2={bbox.y + bbox.height - 15} stroke={strokeColor} strokeWidth="3" />
 
-                  {/* Label text */}
-                  <text
-                    x={bbox.x + 4}
-                    y={bbox.y - 7}
-                    fill="white"
-                    fontSize="12"
-                    fontFamily="monospace"
-                    fontWeight="bold"
-                  >
-                    {bbox.is_centered ? "LOCKED" : "DETECTED"}
-                  </text>
-                </g>
-              ))}
+                    {/* Center point of bbox */}
+                    <circle
+                      cx={bbox.center_x}
+                      cy={bbox.center_y}
+                      r="3"
+                      fill={strokeColor}
+                    />
+
+                    {/* Label background */}
+                    <rect
+                      x={bbox.x}
+                      y={bbox.y - 22}
+                      width={Math.max(80, labelText.length * 7)}
+                      height={18}
+                      fill={labelBg}
+                      opacity="0.9"
+                    />
+
+                    {/* Label text */}
+                    <text
+                      x={bbox.x + 4}
+                      y={bbox.y - 9}
+                      fill="white"
+                      fontSize="12"
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                    >
+                      {labelText}
+                    </text>
+
+                    {/* Stability indicator if available */}
+                    {bbox.stability_counter !== undefined && (
+                      <text
+                        x={bbox.x + 4}
+                        y={bbox.y + bbox.height + 15}
+                        fill={strokeColor}
+                        fontSize="10"
+                        fontFamily="monospace"
+                        fontWeight="bold"
+                      >
+                        {bbox.stability_counter}/8
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
             </svg>
 
             {/* Overlay UI */}
@@ -250,11 +333,17 @@ export default function Home() {
 
               {/* Algorithm Status */}
               <div className="mb-3 pb-3 border-b border-zinc-700">
-                <div className="text-[10px] text-zinc-500 uppercase font-semibold mb-2">Algorithm</div>
+                <div className="text-[10px] text-zinc-500 uppercase font-semibold mb-2">Detection Algorithm</div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-zinc-400">Method:</span>
-                    <span className="text-zinc-200 font-mono">MOG2 BG Sub</span>
+                    <span className="text-zinc-200 font-mono">Frame Differencing</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-400">Calibration:</span>
+                    <span className={`font-mono font-bold ${calibrationStatus?.is_calibrated ? 'text-emerald-400' : 'text-yellow-500'}`}>
+                      {calibrationStatus?.is_calibrated ? '✓ OK' : '⚠ PENDING'}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-zinc-400">Objects Found:</span>
@@ -276,47 +365,76 @@ export default function Home() {
                 <div>
                   <div className="text-[10px] text-zinc-500 uppercase font-semibold mb-2">Detected Objects</div>
                   <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
-                    {boundingBoxes.map((bbox: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className={`p-2 rounded border ${bbox.is_centered ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-zinc-800/50 border-zinc-700'} transition-all`}
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-bold text-white">Object #{idx + 1}</span>
-                          {bbox.is_centered && (
-                            <span className="px-1.5 py-0.5 bg-emerald-500 text-white text-[9px] font-bold rounded">
-                              CENTERED
+                    {boundingBoxes.map((bbox: any, idx: number) => {
+                      // Determine color based on validation status
+                      let statusColor = 'bg-zinc-800/50 border-zinc-700';
+                      let statusLabel = 'INVALID';
+                      if (bbox.is_stable && bbox.is_centered) {
+                        statusColor = 'bg-emerald-500/20 border-emerald-500/50';
+                        statusLabel = 'READY';
+                      } else if (bbox.is_centered && !bbox.touches_edge && bbox.aspect_ratio_valid) {
+                        statusColor = 'bg-blue-500/20 border-blue-500/30';
+                        statusLabel = 'STABILIZING';
+                      } else if (bbox.touches_edge) {
+                        statusColor = 'bg-red-500/20 border-red-500/30';
+                        statusLabel = 'EDGE TOUCH';
+                      }
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`p-2 rounded border ${statusColor} transition-all`}
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-bold text-white">Object #{idx + 1}</span>
+                            <span className={`px-1.5 py-0.5 text-white text-[9px] font-bold rounded ${
+                              statusLabel === 'READY' ? 'bg-emerald-500' :
+                              statusLabel === 'STABILIZING' ? 'bg-blue-500' :
+                              statusLabel === 'EDGE TOUCH' ? 'bg-red-500' :
+                              'bg-zinc-600'
+                            }`}>
+                              {statusLabel}
                             </span>
-                          )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                            <div className="flex justify-between">
+                              <span className="text-zinc-500">X:</span>
+                              <span className="text-zinc-300 font-mono">{bbox.x}px</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-zinc-500">Y:</span>
+                              <span className="text-zinc-300 font-mono">{bbox.y}px</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-zinc-500">W:</span>
+                              <span className="text-zinc-300 font-mono">{bbox.width}px</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-zinc-500">H:</span>
+                              <span className="text-zinc-300 font-mono">{bbox.height}px</span>
+                            </div>
+                            <div className="flex justify-between col-span-2">
+                              <span className="text-zinc-500">Area:</span>
+                              <span className="text-zinc-300 font-mono">{bbox.area.toLocaleString()}px²</span>
+                            </div>
+                            <div className="flex justify-between col-span-2">
+                              <span className="text-zinc-500">Aspect:</span>
+                              <span className={`font-mono ${bbox.aspect_ratio_valid ? 'text-zinc-300' : 'text-red-400'}`}>
+                                {bbox.aspect_ratio?.toFixed(2) || 'N/A'}
+                              </span>
+                            </div>
+                            {bbox.is_stable !== undefined && (
+                              <div className="flex justify-between col-span-2">
+                                <span className="text-zinc-500">Stability:</span>
+                                <span className={`font-mono ${bbox.is_stable ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                                  {bbox.stability_counter || 0}/{8}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">X:</span>
-                            <span className="text-zinc-300 font-mono">{bbox.x}px</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Y:</span>
-                            <span className="text-zinc-300 font-mono">{bbox.y}px</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">W:</span>
-                            <span className="text-zinc-300 font-mono">{bbox.width}px</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">H:</span>
-                            <span className="text-zinc-300 font-mono">{bbox.height}px</span>
-                          </div>
-                          <div className="flex justify-between col-span-2">
-                            <span className="text-zinc-500">Area:</span>
-                            <span className="text-zinc-300 font-mono">{bbox.area.toLocaleString()}px²</span>
-                          </div>
-                          <div className="flex justify-between col-span-2">
-                            <span className="text-zinc-500">Center:</span>
-                            <span className="text-zinc-300 font-mono">({bbox.center_x}, {bbox.center_y})</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -409,6 +527,48 @@ export default function Home() {
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /></svg>
                   MANUAL
+                </button>
+              </div>
+            </div>
+
+            {/* Calibration Section */}
+            <div className="pt-4 border-t border-zinc-800">
+              <h2 className="text-sm font-medium text-zinc-400 mb-4 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4" /><path d="m16.2 7.8 2.9-2.9" /><path d="M18 12h4" /><path d="m16.2 16.2 2.9 2.9" /><path d="M12 18v4" /><path d="m4.9 19.1 2.9-2.9" /><path d="M2 12h4" /><path d="m4.9 4.9 2.9 2.9" /></svg>
+                BACKGROUND CALIBRATION
+              </h2>
+
+              {/* Calibration Status */}
+              <div className="mb-3 pb-3 border-b border-zinc-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-zinc-500">Status:</span>
+                  <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${calibrationStatus?.is_calibrated ? 'bg-emerald-500/20 text-emerald-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                    {calibrationStatus?.is_calibrated ? '✓ CALIBRATED' : '◯ NOT CALIBRATED'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-zinc-500">
+                  {calibrationStatus?.calibration_status || 'No calibration data'}
+                </p>
+              </div>
+
+              {/* Calibration Controls */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={calibrateBackground}
+                  disabled={isCalibrating || !inferenceStatus?.is_running}
+                  className="col-span-2 group relative overflow-hidden bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:bg-zinc-700 disabled:cursor-not-allowed text-zinc-100 py-3 rounded-lg transition-all border border-amber-500 disabled:border-zinc-600 flex items-center justify-center gap-2 font-medium text-sm"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1" /><path d="M12 8v-2" /><path d="M4.22 4.22l1.42 1.42" /><path d="M1.5 12h2" /><path d="M4.22 19.78l1.42-1.42" /><path d="M12 16v2" /><path d="M19.78 19.78l-1.42-1.42" /><path d="M22.5 12h-2" /><path d="M19.78 4.22l-1.42 1.42" /></svg>
+                  {isCalibrating ? 'Calibrating...' : 'Calibrate Now'}
+                </button>
+                <button
+                  onClick={resetCalibration}
+                  disabled={!calibrationStatus?.is_calibrated}
+                  className="col-span-2 bg-zinc-700 hover:bg-zinc-600 active:bg-zinc-800 disabled:bg-zinc-800 disabled:cursor-not-allowed text-zinc-100 py-2.5 rounded-lg transition-all border border-zinc-600 disabled:border-zinc-700 flex items-center justify-center gap-2 font-medium text-sm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 4.5a10 10 0 0 1-18.8 4.2" /></svg>
+                  Reset Calibration
                 </button>
               </div>
             </div>

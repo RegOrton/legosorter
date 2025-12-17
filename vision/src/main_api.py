@@ -430,6 +430,172 @@ def classify_now():
     
     return {"message": "Classification triggered", "status": "ok"}
 
+@app.post("/inference/calibrate")
+def calibrate_background():
+    """
+    Calibrate background detection from current frame.
+
+    Call this when the frame shows only the background (no objects).
+    """
+    from inference import get_inference_engine
+
+    engine = get_inference_engine()
+    camera = get_camera()
+
+    if not engine.state.is_running:
+        raise HTTPException(status_code=400, detail="Inference is not running. Start inference first.")
+
+    # Get current frame from camera
+    ret, frame = camera.get_frame()
+    if not ret or frame is None:
+        raise HTTPException(status_code=400, detail="Could not capture frame from camera")
+
+    # Calibrate
+    success, message = engine.calibrate_background(frame)
+
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+
+    return {
+        "message": message,
+        "is_calibrated": engine.state.is_calibrated,
+        "calibration_status": engine.state.calibration_status
+    }
+
+@app.post("/inference/recalibrate")
+def recalibrate_background():
+    """
+    Reset background calibration.
+    """
+    from inference import get_inference_engine
+
+    engine = get_inference_engine()
+    success, message = engine.recalibrate_background()
+
+    return {
+        "message": message,
+        "is_calibrated": engine.state.is_calibrated,
+        "calibration_status": engine.state.calibration_status
+    }
+
+@app.get("/inference/calibration_status")
+def get_calibration_status():
+    """
+    Get detailed calibration status.
+    """
+    from inference import get_inference_engine
+
+    engine = get_inference_engine()
+    calibration_info = engine.get_calibration_status()
+
+    return {
+        "is_calibrated": engine.state.is_calibrated,
+        "calibration_status": engine.state.calibration_status,
+        "detector_info": calibration_info
+    }
+
+@app.post("/inference/detector/params")
+def update_detector_params(
+    min_area: int = None,
+    max_area: int = None,
+    diff_threshold: int = None,
+    center_tolerance: float = None,
+    edge_margin: int = None
+):
+    """
+    Update detector parameters for fine-tuning object detection.
+
+    Args:
+        min_area: Minimum object area in pixels (default: 1000)
+        max_area: Maximum object area in pixels (default: 50000)
+        diff_threshold: Difference threshold for background subtraction (default: 30, lower = more sensitive)
+        center_tolerance: Fraction of frame center for "centered" detection (default: 0.15)
+        edge_margin: Pixels from edge where object is considered touching (default: 20)
+    """
+    from inference import get_inference_engine
+
+    engine = get_inference_engine()
+
+    if engine.detector is None:
+        raise HTTPException(status_code=400, detail="Detector not initialized")
+
+    updated_params = {}
+
+    if min_area is not None:
+        engine.detector.min_area = min_area
+        updated_params['min_area'] = min_area
+
+    if max_area is not None:
+        engine.detector.max_area = max_area
+        updated_params['max_area'] = max_area
+
+    if diff_threshold is not None:
+        engine.detector.diff_threshold = diff_threshold
+        updated_params['diff_threshold'] = diff_threshold
+
+    if center_tolerance is not None:
+        engine.detector.center_tolerance = center_tolerance
+        updated_params['center_tolerance'] = center_tolerance
+
+    if edge_margin is not None:
+        engine.detector.edge_margin = edge_margin
+        updated_params['edge_margin'] = edge_margin
+
+    logger.info(f"Updated detector params: {updated_params}")
+
+    return {
+        "message": "Detector parameters updated",
+        "updated": updated_params,
+        "current_params": {
+            "min_area": engine.detector.min_area,
+            "max_area": engine.detector.max_area,
+            "diff_threshold": engine.detector.diff_threshold,
+            "center_tolerance": engine.detector.center_tolerance,
+            "edge_margin": engine.detector.edge_margin,
+        }
+    }
+
+@app.get("/inference/detector/debug")
+def get_detector_debug():
+    """
+    Get debug visualization showing what the detector sees.
+    Returns base64-encoded image showing background difference.
+    """
+    from inference import get_inference_engine
+    import base64
+
+    engine = get_inference_engine()
+
+    if not engine.state.is_calibrated:
+        raise HTTPException(status_code=400, detail="Detector not calibrated. Calibrate first.")
+
+    camera = get_camera()
+    if camera is None:
+        raise HTTPException(status_code=400, detail="Camera not available")
+
+    ret, frame = camera.get_frame()
+    if not ret or frame is None:
+        raise HTTPException(status_code=400, detail="Could not capture frame")
+
+    # Get debug visualization
+    bounding_boxes, center_detected, status, debug_img = engine.detector.debug_detect(frame)
+
+    # Encode debug image as JPEG
+    _, buffer = cv2.imencode('.jpg', debug_img)
+    img_base64 = base64.b64encode(buffer).decode('utf-8')
+
+    return {
+        "status": status,
+        "bounding_boxes": bounding_boxes,
+        "center_detected": center_detected,
+        "debug_image": img_base64,
+        "detector_params": {
+            "min_area": engine.detector.min_area,
+            "max_area": engine.detector.max_area,
+            "diff_threshold": engine.detector.diff_threshold,
+        }
+    }
+
 # Video file management endpoints
 @app.post("/video/upload")
 async def upload_video(file: UploadFile = File(...)):
