@@ -8,21 +8,28 @@ from webcam_client import create_webcam_capture
 CAMERA_USB = "usb"
 CAMERA_CSI = "csi"
 CAMERA_HTTP = "http"
+CAMERA_VIDEO_FILE = "video_file"
 
 class Camera:
-    def __init__(self, source=0, width=1280, height=720, camera_type=None):
+    def __init__(self, source=0, width=1280, height=720, camera_type=None, video_file=None, playback_speed=1.0):
         """
         Initialize the Camera.
         :param source: Camera index (int) or video file path (str).
         :param width: Desired frame width
         :param height: Desired frame height
-        :param camera_type: Camera type: "usb", "csi", or "http". If None, auto-detect from environment.
+        :param camera_type: Camera type: "usb", "csi", "http", or "video_file". If None, auto-detect from environment.
+        :param video_file: Path to video file (required if camera_type is "video_file")
+        :param playback_speed: Playback speed multiplier (1.0 = normal speed, 2.0 = 2x, 0.5 = half speed)
         """
         self.source = source
         self.width = width
         self.height = height
         self.cap = None
         self.logger = logging.getLogger(__name__)
+        self.video_file = video_file
+        self.playback_speed = playback_speed
+        self.frame_delay = None  # Will be calculated based on video FPS
+        self.last_frame_time = 0
 
         # Determine camera type
         if camera_type is not None:
@@ -32,21 +39,61 @@ class Camera:
         else:
             self.camera_type = CAMERA_USB
 
-    def set_camera_type(self, camera_type: str):
+    def set_camera_type(self, camera_type: str, video_file: str = None):
         """
         Switch camera type and restart the camera.
-        :param camera_type: "usb", "csi", or "http"
+        :param camera_type: "usb", "csi", "http", or "video_file"
+        :param video_file: Path to video file (required if camera_type is "video_file")
         """
         self.logger.info(f"Switching camera type from {self.camera_type} to {camera_type}")
         self.release()
         self.camera_type = camera_type
+        if video_file:
+            self.video_file = video_file
         self.start()
+
+    def set_playback_speed(self, speed: float):
+        """
+        Set video playback speed.
+        :param speed: Playback speed multiplier (1.0 = normal, 2.0 = 2x, 0.5 = half speed)
+        """
+        if speed <= 0:
+            self.logger.warning(f"Invalid playback speed {speed}, must be > 0")
+            return
+        self.logger.info(f"Setting playback speed to {speed}x")
+        self.playback_speed = speed
+        if self.frame_delay is not None:
+            # Recalculate delay based on new speed
+            fps = self.cap.get(cv2.CAP_PROP_FPS) if self.cap else 30
+            self.frame_delay = (1.0 / fps) / self.playback_speed
 
     def start(self):
         """Opens the video source."""
         self.logger.info(f"Opening camera (type: {self.camera_type}, source: {self.source})")
 
-        if self.camera_type == CAMERA_HTTP:
+        if self.camera_type == CAMERA_VIDEO_FILE:
+            if not self.video_file:
+                self.logger.error("Video file path not specified for video_file camera type")
+                raise RuntimeError("Video file path required for video_file camera type")
+
+            self.logger.info(f"Using video file: {self.video_file} (speed: {self.playback_speed}x)")
+            self.cap = cv2.VideoCapture(self.video_file)
+
+            if not self.cap.isOpened():
+                self.logger.error(f"Failed to open video file: {self.video_file}")
+                raise RuntimeError(f"Could not open video file: {self.video_file}")
+
+            # Calculate frame delay based on video FPS
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            if fps <= 0:
+                fps = 30  # Default fallback
+            self.frame_delay = (1.0 / fps) / self.playback_speed
+            self.last_frame_time = time.time()
+
+            total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.logger.info(f"Video opened: {fps} FPS, {total_frames} frames, delay: {self.frame_delay:.4f}s")
+
+        elif self.camera_type == CAMERA_HTTP:
             self.logger.info("Using HTTP webcam client")
             self.cap = create_webcam_capture(use_http=True)
         elif self.camera_type == CAMERA_CSI:
@@ -93,9 +140,29 @@ class Camera:
             self.start()
 
         ret, frame = self.cap.read()
+
+        # Handle video file looping
+        if not ret and self.camera_type == CAMERA_VIDEO_FILE:
+            self.logger.info("Video file reached end, looping back to start")
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ret, frame = self.cap.read()
+            self.last_frame_time = time.time()
+
         if not ret:
             self.logger.warning("Failed to read frame")
             return False, None
+
+        # Handle playback speed timing for video files
+        if self.camera_type == CAMERA_VIDEO_FILE and self.frame_delay:
+            current_time = time.time()
+            elapsed = current_time - self.last_frame_time
+
+            # If we're reading too fast, sleep to match desired playback speed
+            if elapsed < self.frame_delay:
+                time.sleep(self.frame_delay - elapsed)
+
+            self.last_frame_time = time.time()
+
         return True, frame
 
     def release(self):

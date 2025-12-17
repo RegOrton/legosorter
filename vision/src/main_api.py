@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from train import training_manager, state
@@ -10,13 +10,18 @@ import os
 from pathlib import Path
 from camera import Camera
 import torchvision.transforms as transforms
-from typing import Dict, Any
+from typing import Dict, Any, List
+import shutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("API")
 
 app = FastAPI(title="Lego Sorter Vision API")
+
+# Video file storage directory
+VIDEO_UPLOAD_DIR = Path("/app/output/video_uploads")
+VIDEO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Allow CORS for frontend
 app.add_middleware(
@@ -37,9 +42,30 @@ def get_camera():
         # Get camera type from settings
         settings_manager = get_settings_manager()
         camera_type = settings_manager.get("camera_type")
+        video_file = settings_manager.get("video_file")
+        playback_speed = settings_manager.get("video_playback_speed", 1.0)
 
         logger.info(f"Initializing camera with type: {camera_type}")
-        camera = Camera(source=0, width=640, height=480, camera_type=camera_type)
+
+        # Handle video file camera type
+        if camera_type == "video_file":
+            if video_file:
+                video_path = VIDEO_UPLOAD_DIR / video_file
+                logger.info(f"Using video file: {video_path}")
+                camera = Camera(
+                    source=0,
+                    width=640,
+                    height=480,
+                    camera_type=camera_type,
+                    video_file=str(video_path),
+                    playback_speed=playback_speed
+                )
+            else:
+                logger.error("Video file camera type selected but no video file specified")
+                return None
+        else:
+            camera = Camera(source=0, width=640, height=480, camera_type=camera_type)
+
         try:
             camera.start()
             logger.info(f"Camera initialized for streaming (type: {camera_type})")
@@ -111,7 +137,7 @@ def get_camera_type():
 
     return {
         "camera_type": cam.camera_type,
-        "available_types": ["usb", "csi", "http"]
+        "available_types": ["usb", "csi", "http", "video_file"]
     }
 
 @app.post("/camera/type")
@@ -120,11 +146,11 @@ def set_camera_type(camera_type: str):
     Set camera type and restart camera.
 
     Args:
-        camera_type: Camera type - "usb", "csi", or "http"
+        camera_type: Camera type - "usb", "csi", "http", or "video_file"
     """
-    from camera import CAMERA_USB, CAMERA_CSI, CAMERA_HTTP
+    from camera import CAMERA_USB, CAMERA_CSI, CAMERA_HTTP, CAMERA_VIDEO_FILE
 
-    valid_types = [CAMERA_USB, CAMERA_CSI, CAMERA_HTTP]
+    valid_types = [CAMERA_USB, CAMERA_CSI, CAMERA_HTTP, CAMERA_VIDEO_FILE]
     if camera_type not in valid_types:
         raise HTTPException(
             status_code=400,
@@ -158,13 +184,13 @@ def update_settings(settings: Dict[str, Any]):
     Update settings and persist to disk.
 
     Args:
-        settings: Dictionary of settings to update (dataset, epochs, batch_size, camera_type)
+        settings: Dictionary of settings to update (dataset, epochs, batch_size, camera_type, video_file, video_playback_speed)
     """
     settings_manager = get_settings_manager()
 
     # Validate settings
     valid_datasets = ["ldraw", "ldview", "rebrickable"]
-    valid_cameras = ["usb", "csi", "http"]
+    valid_cameras = ["usb", "csi", "http", "video_file"]
 
     if "dataset" in settings and settings["dataset"] not in valid_datasets:
         raise HTTPException(
@@ -194,17 +220,25 @@ def update_settings(settings: Dict[str, Any]):
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="batch_size must be an integer between 1 and 64")
 
+    if "video_playback_speed" in settings:
+        try:
+            speed = float(settings["video_playback_speed"])
+            if speed <= 0 or speed > 10:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="video_playback_speed must be a number between 0.1 and 10")
+
     # Update settings
     success = settings_manager.update(settings)
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to save settings")
 
-    # If camera_type was changed, reset the global camera instance
-    if "camera_type" in settings:
+    # If camera_type, video_file, or playback speed was changed, reset the global camera instance
+    if "camera_type" in settings or "video_file" in settings or "video_playback_speed" in settings:
         global camera
         if camera is not None:
-            logger.info("Camera type changed, resetting camera instance")
+            logger.info("Camera settings changed, resetting camera instance")
             camera.release()
             camera = None
 
@@ -395,6 +429,126 @@ def classify_now():
     # However, to be nice to the legacy API contract, we could try to wait a split second.
     
     return {"message": "Classification triggered", "status": "ok"}
+
+# Video file management endpoints
+@app.post("/video/upload")
+async def upload_video(file: UploadFile = File(...)):
+    """
+    Upload a video file for use as camera input.
+
+    Args:
+        file: Video file (MP4, AVI, MOV, etc.)
+    """
+    # Validate file type
+    allowed_extensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"]
+    file_ext = Path(file.filename).suffix.lower()
+
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed: {allowed_extensions}"
+        )
+
+    # Generate unique filename
+    filename = f"{Path(file.filename).stem}{file_ext}"
+    file_path = VIDEO_UPLOAD_DIR / filename
+
+    # Save file
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        logger.info(f"Video file uploaded: {filename}")
+
+        return {
+            "message": "Video uploaded successfully",
+            "filename": filename,
+            "path": str(file_path)
+        }
+    except Exception as e:
+        logger.error(f"Failed to upload video: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload video: {str(e)}")
+
+@app.get("/video/list")
+def list_videos():
+    """List all uploaded video files."""
+    try:
+        video_files = []
+        for file_path in VIDEO_UPLOAD_DIR.iterdir():
+            if file_path.is_file():
+                video_files.append({
+                    "filename": file_path.name,
+                    "size": file_path.stat().st_size,
+                    "modified": file_path.stat().st_mtime
+                })
+
+        return {"videos": video_files}
+    except Exception as e:
+        logger.error(f"Failed to list videos: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list videos: {str(e)}")
+
+@app.delete("/video/{filename}")
+def delete_video(filename: str):
+    """
+    Delete a video file.
+
+    Args:
+        filename: Name of the video file to delete
+    """
+    file_path = VIDEO_UPLOAD_DIR / filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+
+    try:
+        # Check if this video is currently in use
+        settings_manager = get_settings_manager()
+        current_video = settings_manager.get("video_file")
+
+        if current_video == filename:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete video file that is currently in use. Please select a different camera source first."
+            )
+
+        file_path.unlink()
+        logger.info(f"Video file deleted: {filename}")
+
+        return {"message": f"Video file '{filename}' deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete video: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete video: {str(e)}")
+
+@app.post("/video/playback_speed")
+def set_playback_speed(speed: float):
+    """
+    Set video playback speed.
+
+    Args:
+        speed: Playback speed multiplier (0.1 to 10.0)
+    """
+    if speed <= 0 or speed > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Playback speed must be between 0.1 and 10.0"
+        )
+
+    global camera
+    if camera is not None and camera.camera_type == "video_file":
+        camera.set_playback_speed(speed)
+
+    # Update settings
+    settings_manager = get_settings_manager()
+    settings_manager.set("video_playback_speed", speed)
+
+    logger.info(f"Playback speed set to {speed}x")
+
+    return {
+        "message": f"Playback speed set to {speed}x",
+        "speed": speed
+    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

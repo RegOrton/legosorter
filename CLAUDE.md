@@ -258,12 +258,16 @@ Settings are stored in `vision/output/settings.json` and persist across restarts
 - Epochs: `10`
 - Batch Size: `8`
 - Camera Type: `usb`
+- Video File: `null` (none selected)
+- Video Playback Speed: `1.0` (normal speed)
 
 **Configure via Settings Page:**
 Navigate to `http://localhost:3000/settings` to configure:
 - Dataset source (ldraw, ldview, rebrickable)
 - Training parameters (epochs, batch size)
-- Camera source (usb, csi, http)
+- Camera source (usb, csi, http, video_file)
+- Video file selection and upload
+- Video playback speed
 
 **Configure via API:**
 ```bash
@@ -298,19 +302,52 @@ curl -X POST "http://localhost:8000/train/start?epochs=20&batch_size=16&dataset=
 
 ### Camera System
 
-The `Camera` class in `camera.py` supports three modes (switchable via Settings page or API):
+The `Camera` class in [camera.py](vision/src/camera.py) supports four modes (switchable via Settings page or API):
 
 - **USB Camera** (`usb`): Direct USB webcam via `cv2.VideoCapture(0)`
 - **CSI Camera** (`csi`): Raspberry Pi camera module via GStreamer or V4L2
 - **HTTP Camera** (`http`): Remote webcam via `WebcamClient` (for Docker on Windows)
+- **Video File** (`video_file`): Pre-recorded MP4/AVI/MOV video that loops continuously with configurable playback speed
 
 **Switch camera via API:**
 ```bash
-curl -X POST "http://localhost:8000/camera/type?camera_type=http"
+curl -X POST "http://localhost:8000/camera/type?camera_type=video_file"
 ```
 
 **Switch camera via Settings page:**
 Navigate to `http://localhost:3000/settings` and select camera source.
+
+#### Video File Mode
+
+The video file mode allows you to use pre-recorded videos for testing and development without a physical camera:
+
+**Upload a video:**
+1. Navigate to Settings page: `http://localhost:3000/settings`
+2. Select "Video File" as camera source
+3. Click "Upload Video" and select an MP4, AVI, MOV, MKV, or WebM file
+4. Select the uploaded video from the list
+5. Adjust playback speed (0.1x to 5.0x)
+6. Click "Save Settings"
+
+**Video file storage:**
+- Uploaded videos are stored in `vision/output/video_uploads/`
+- Videos loop automatically when playback reaches the end
+- Playback speed can be adjusted in real-time
+
+**Video management API:**
+```bash
+# Upload video
+curl -X POST -F "file=@myvideo.mp4" http://localhost:8000/video/upload
+
+# List uploaded videos
+curl http://localhost:8000/video/list
+
+# Delete video
+curl -X DELETE http://localhost:8000/video/{filename}
+
+# Set playback speed
+curl -X POST "http://localhost:8000/video/playback_speed?speed=2.0"
+```
 
 ## Important Conventions
 

@@ -19,7 +19,9 @@ DEFAULT_SETTINGS = {
     "dataset": "ldraw",
     "epochs": 10,
     "batch_size": 8,
-    "camera_type": "usb"
+    "camera_type": "usb",
+    "video_file": None,
+    "video_playback_speed": 1.0
 }
 
 class SettingsManager:

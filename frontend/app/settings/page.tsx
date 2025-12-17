@@ -5,7 +5,11 @@ export default function SettingsPage() {
     const [dataset, setDataset] = useState<"ldraw" | "ldview" | "rebrickable">("ldraw");
     const [epochs, setEpochs] = useState(10);
     const [batchSize, setBatchSize] = useState(8);
-    const [cameraType, setCameraType] = useState<"usb" | "csi" | "http">("usb");
+    const [cameraType, setCameraType] = useState<"usb" | "csi" | "http" | "video_file">("usb");
+    const [videoFile, setVideoFile] = useState<string | null>(null);
+    const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+    const [videos, setVideos] = useState<Array<{filename: string, size: number, modified: number}>>([]);
+    const [isUploading, setIsUploading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -26,8 +30,23 @@ export default function SettingsPage() {
             if (data.epochs) setEpochs(data.epochs);
             if (data.batch_size) setBatchSize(data.batch_size);
             if (data.camera_type) setCameraType(data.camera_type);
+            if (data.video_file !== undefined) setVideoFile(data.video_file);
+            if (data.video_playback_speed) setPlaybackSpeed(data.video_playback_speed);
         } catch (e) {
             // Silently fail - vision API is offline, use default settings
+        }
+    };
+
+    const loadVideos = async () => {
+        try {
+            const res = await fetch(`${API_URL}/video/list`, {
+                signal: AbortSignal.timeout(3000)
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            setVideos(data.videos || []);
+        } catch (e) {
+            // Silently fail
         }
     };
 
@@ -43,7 +62,9 @@ export default function SettingsPage() {
                     dataset,
                     epochs,
                     batch_size: batchSize,
-                    camera_type: cameraType
+                    camera_type: cameraType,
+                    video_file: videoFile,
+                    video_playback_speed: playbackSpeed
                 }),
                 signal: AbortSignal.timeout(3000)
             });
@@ -65,6 +86,65 @@ export default function SettingsPage() {
             setSaveMessage("Vision API is offline - settings will be saved when it comes online");
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const uploadVideo = async (file: File) => {
+        setIsUploading(true);
+        setSaveMessage(null);
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const res = await fetch(`${API_URL}/video/upload`, {
+                method: 'POST',
+                body: formData,
+                signal: AbortSignal.timeout(30000)
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                setSaveMessage(`Video "${data.filename}" uploaded successfully!`);
+                await loadVideos();
+                setVideoFile(data.filename);
+                setTimeout(() => setSaveMessage(null), 3000);
+            } else {
+                setSaveMessage("Failed to upload video: " + data.detail);
+            }
+        } catch (e) {
+            setSaveMessage("Failed to upload video: " + (e as Error).message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const deleteVideo = async (filename: string) => {
+        if (!confirm(`Delete video "${filename}"?`)) return;
+
+        setSaveMessage(null);
+
+        try {
+            const res = await fetch(`${API_URL}/video/${filename}`, {
+                method: 'DELETE',
+                signal: AbortSignal.timeout(3000)
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                setSaveMessage(`Video "${filename}" deleted successfully!`);
+                await loadVideos();
+                if (videoFile === filename) {
+                    setVideoFile(null);
+                }
+                setTimeout(() => setSaveMessage(null), 3000);
+            } else {
+                setSaveMessage("Failed to delete video: " + data.detail);
+            }
+        } catch (e) {
+            setSaveMessage("Failed to delete video: " + (e as Error).message);
         }
     };
 
@@ -103,6 +183,7 @@ export default function SettingsPage() {
 
     useEffect(() => {
         loadSettings();
+        loadVideos();
     }, []);
 
     return (
@@ -242,8 +323,109 @@ export default function SettingsPage() {
                                     <div className="text-xs text-zinc-500">Remote webcam server</div>
                                 </div>
                             </label>
+
+                            <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${cameraType === 'video_file' ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'}`}>
+                                <input
+                                    type="radio"
+                                    name="camera"
+                                    value="video_file"
+                                    checked={cameraType === 'video_file'}
+                                    onChange={(e) => setCameraType(e.target.value as any)}
+                                    className="w-4 h-4"
+                                />
+                                <div className="flex-1">
+                                    <div className="text-sm font-medium text-zinc-200">Video File</div>
+                                    <div className="text-xs text-zinc-500">Pre-recorded MP4 video loop</div>
+                                </div>
+                            </label>
                         </div>
                     </div>
+
+                    {/* Video File Settings */}
+                    {cameraType === 'video_file' && (
+                        <>
+                            <div className="h-px bg-zinc-800" />
+
+                            <div>
+                                <h3 className="text-sm font-medium text-zinc-400 mb-3">VIDEO FILE SETTINGS</h3>
+
+                                {/* Upload Video */}
+                                <div className="mb-4">
+                                    <label className="text-xs text-zinc-500 block mb-2">Upload Video</label>
+                                    <input
+                                        type="file"
+                                        accept="video/mp4,video/avi,video/mov,video/mkv,video/webm"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) uploadVideo(file);
+                                        }}
+                                        disabled={isUploading}
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 disabled:opacity-50"
+                                    />
+                                    {isUploading && (
+                                        <div className="text-xs text-zinc-500 mt-1">Uploading...</div>
+                                    )}
+                                </div>
+
+                                {/* Video List */}
+                                {videos.length > 0 && (
+                                    <div className="mb-4">
+                                        <label className="text-xs text-zinc-500 block mb-2">Available Videos</label>
+                                        <div className="space-y-2">
+                                            {videos.map((video) => (
+                                                <div
+                                                    key={video.filename}
+                                                    className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${videoFile === video.filename ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-950 border-zinc-800'}`}
+                                                >
+                                                    <input
+                                                        type="radio"
+                                                        name="video"
+                                                        value={video.filename}
+                                                        checked={videoFile === video.filename}
+                                                        onChange={(e) => setVideoFile(e.target.value)}
+                                                        className="w-4 h-4"
+                                                    />
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-medium text-zinc-200 truncate">{video.filename}</div>
+                                                        <div className="text-xs text-zinc-500">
+                                                            {(video.size / 1024 / 1024).toFixed(2)} MB
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => deleteVideo(video.filename)}
+                                                        className="px-3 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded text-xs transition-all"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Playback Speed */}
+                                <div>
+                                    <label className="text-xs text-zinc-500 block mb-1">
+                                        Playback Speed: {playbackSpeed.toFixed(1)}x
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="0.1"
+                                        max="5"
+                                        step="0.1"
+                                        value={playbackSpeed}
+                                        onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))}
+                                        className="w-full"
+                                    />
+                                    <div className="flex justify-between text-xs text-zinc-600 mt-1">
+                                        <span>0.1x</span>
+                                        <span>1x</span>
+                                        <span>5x</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
 
                     <div className="h-px bg-zinc-800" />
 
