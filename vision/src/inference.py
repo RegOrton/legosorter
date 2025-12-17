@@ -15,6 +15,7 @@ import logging
 import threading
 import time
 from collections import deque
+from enum import Enum
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,6 +40,16 @@ class LegoClassifier(nn.Module):
         return logits, embeddings
 
 
+class InferenceMode(Enum):
+    MANUAL = "manual"
+    AUTO = "auto"
+
+class AutoState(Enum):
+    WAITING = "waiting"       # Waiting for object to appear/center
+    STABILIZING = "stabilizing" # Object is centered, checking stability
+    CLASSIFIED = "classified"   # Object classified, waiting for it to leave
+    COOLDOWN = "cooldown"     # Short cooldown after classification
+
 class InferenceState:
     """Shared state for inference results."""
     
@@ -51,6 +62,11 @@ class InferenceState:
         self.error = None
         self.bounding_boxes = []  # List of detected bounding boxes
         self.center_detected = False  # True if object detected in center
+        
+        # New State Machine fields
+        self.mode = InferenceMode.AUTO.value
+        self.auto_state = AutoState.WAITING.value
+        self.last_classification_time = 0.0
 
 
 class InferenceEngine:
@@ -86,6 +102,8 @@ class InferenceEngine:
         
         self.state = InferenceState()
         self.stop_event = threading.Event()
+        self.trigger_event = threading.Event() # For manual trigger
+        
         self.thread = None
         self.camera = None
         
@@ -97,7 +115,37 @@ class InferenceEngine:
             history=500, varThreshold=16, detectShadows=False
         )
         self.frame_buffer = deque(maxlen=10)  # Buffer for background learning
+        
+        # Stability params
+        self.stability_counter = 0
+        self.stability_threshold = 5 # frames
     
+    def set_mode(self, mode_str):
+        """Set inference mode (auto/manual)."""
+        try:
+            new_mode = InferenceMode(mode_str)
+            self.state.mode = new_mode.value
+            logger.info(f"Switched inference mode to: {new_mode.value}")
+            
+            # Reset internal state on mode switch
+            self.state.auto_state = AutoState.WAITING.value
+            self.stability_counter = 0
+            return True, f"Mode set to {mode_str}"
+        except ValueError:
+            return False, f"Invalid mode: {mode_str}"
+
+    def trigger(self):
+        """Manually trigger classification."""
+        if self.state.mode != InferenceMode.MANUAL.value:
+             # Even in auto mode, we might want to force a trigger? 
+             # For now let's allow it but log a warning if it's weird.
+             logger.info("Manual trigger received (in Auto mode)")
+        else:
+             logger.info("Manual trigger received")
+        
+        self.trigger_event.set()
+        return True
+
     def start(self, camera):
         """Start inference on the camera stream."""
         if self.thread and self.thread.is_alive():
@@ -184,6 +232,92 @@ class InferenceEngine:
         
         return bounding_boxes, center_detected
     
+    def _run_classifier(self, frame):
+        """Run the actual classification model."""
+        try:
+             # Convert BGR to RGB
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Transform
+            input_tensor = self.transform(frame_rgb).unsqueeze(0).to(self.device)
+            
+            # Run inference
+            with torch.no_grad():
+                logits, embeddings = self.model(input_tensor)
+                probabilities = torch.softmax(logits, dim=1)
+                confidence, predicted_class = torch.max(probabilities, dim=1)
+            
+            # Store results
+            prediction = {
+                'class_id': predicted_class.item(),
+                'class_name': self.class_names[predicted_class.item()],
+                'confidence': confidence.item(),
+                'probabilities': probabilities[0].cpu().numpy().tolist(),
+                'timestamp': time.time()
+            }
+            
+            self.state.current_prediction = prediction
+            self.state.predictions.append(prediction)
+            
+            # Keep only last 100 predictions
+            if len(self.state.predictions) > 100:
+                self.state.predictions.pop(0)
+            
+            self.state.last_classification_time = time.time()
+            logger.info(f"Classified: {prediction['class_name']} ({prediction['confidence']:.2f})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Classifier error: {e}")
+            self.state.error = str(e)
+            return False
+
+    def _process_frame(self, frame):
+        """Process a single frame for inference logic."""
+        try:
+             # Preprocess / Detect objects (ALWAYS RUN for UI feedback)
+            bounding_boxes, center_detected = self._detect_objects(frame)
+            self.state.bounding_boxes = bounding_boxes
+            self.state.center_detected = center_detected
+            self.state.frame_count += 1
+
+            # --- STATE MACHINE ---
+            if self.state.mode == InferenceMode.MANUAL.value:
+                if self.trigger_event.is_set():
+                    logger.info("Executing manual trigger...")
+                    self._run_classifier(frame)
+                    self.trigger_event.clear()
+                    
+            elif self.state.mode == InferenceMode.AUTO.value:
+                # Auto Mode Logic
+                
+                if center_detected:
+                    if self.state.auto_state == AutoState.WAITING.value:
+                        self.state.auto_state = AutoState.STABILIZING.value
+                        self.stability_counter = 1
+                    elif self.state.auto_state == AutoState.STABILIZING.value:
+                        self.stability_counter += 1
+                        if self.stability_counter >= self.stability_threshold:
+                            # Stable! Classify now.
+                            self._run_classifier(frame)
+                            self.state.auto_state = AutoState.CLASSIFIED.value
+                else:
+                    # No center object
+                    self.stability_counter = 0
+                    if self.state.auto_state == AutoState.CLASSIFIED.value:
+                        # Object left, re-arm
+                        self.state.auto_state = AutoState.WAITING.value
+                        logger.info("Object removed, re-armed.")
+                    elif self.state.auto_state == AutoState.STABILIZING.value:
+                        # Lost tracking before stable
+                        self.state.auto_state = AutoState.WAITING.value
+            return True
+
+        except Exception as e:
+            logger.error(f"Inference error: {e}")
+            self.state.error = str(e)
+            return False
+
     def _inference_loop(self):
         """Main inference loop."""
         logger.info("Starting inference loop")
@@ -195,52 +329,11 @@ class InferenceEngine:
                 # Get frame from camera
                 ret, frame = self.camera.get_frame()
                 if not ret or frame is None:
-                    logger.warning("Failed to get frame")
-                    time.sleep(0.1)
+                    time.sleep(0.01)
                     continue
                 
-                # Preprocess frame
-                try:
-                    # Detect objects and bounding boxes
-                    bounding_boxes, center_detected = self._detect_objects(frame)
-                    self.state.bounding_boxes = bounding_boxes
-                    self.state.center_detected = center_detected
-                    
-                    # Convert BGR to RGB
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    
-                    # Transform
-                    input_tensor = self.transform(frame_rgb).unsqueeze(0).to(self.device)
-                    
-                    # Run inference
-                    with torch.no_grad():
-                        logits, embeddings = self.model(input_tensor)
-                        probabilities = torch.softmax(logits, dim=1)
-                        confidence, predicted_class = torch.max(probabilities, dim=1)
-                    
-                    # Store results
-                    prediction = {
-                        'class_id': predicted_class.item(),
-                        'class_name': self.class_names[predicted_class.item()],
-                        'confidence': confidence.item(),
-                        'probabilities': probabilities[0].cpu().numpy().tolist(),
-                        'timestamp': time.time(),
-                        'bounding_boxes': bounding_boxes,
-                        'center_detected': center_detected
-                    }
-                    
-                    self.state.current_prediction = prediction
-                    self.state.predictions.append(prediction)
-                    
-                    # Keep only last 100 predictions
-                    if len(self.state.predictions) > 100:
-                        self.state.predictions.pop(0)
-                    
-                    self.state.frame_count += 1
-                    
-                except Exception as e:
-                    logger.error(f"Inference error: {e}")
-                    self.state.error = str(e)
+                # Process frame
+                self._process_frame(frame)
                 
                 # Calculate FPS
                 elapsed = time.time() - start_time
@@ -249,7 +342,7 @@ class InferenceEngine:
                     avg_time = sum(self.frame_times) / len(self.frame_times)
                     self.state.fps = 1.0 / avg_time if avg_time > 0 else 0
                 
-                # Limit to ~30 FPS max
+                # Limit to ~30 FPS max to save CPU
                 if elapsed < 0.033:
                     time.sleep(0.033 - elapsed)
         

@@ -209,6 +209,10 @@ export default function Home() {
                   TARGET LOCKED
                 </span>
               )}
+              <span className={`px-2 py-1 backdrop-blur text-[10px] rounded border font-mono flex items-center gap-1 ${inferenceMode === 'auto' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-orange-500/20 text-orange-400 border-orange-500/30'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${inferenceMode === 'auto' ? 'bg-purple-400' : 'bg-orange-400'}`}></span>
+                MODE: {inferenceMode.toUpperCase()}
+              </span>
             </div>
 
             {/* Classification Overlay */}
@@ -381,6 +385,30 @@ export default function Home() {
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                   {isClassifying ? 'Classifying...' : 'Classify Now'}
+                </button>
+              </div>
+
+              {/* Mode Switch */}
+              <div className="grid grid-cols-2 gap-2 mt-2 bg-zinc-950/50 p-1 rounded-lg border border-zinc-800">
+                <button
+                  onClick={() => setMode('auto')}
+                  className={`py-2 rounded px-3 text-xs font-medium transition-all flex items-center justify-center gap-2 ${inferenceMode === 'auto'
+                      ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4" /><path d="m16.2 7.8 2.9-2.9" /><path d="M18 12h4" /><path d="m16.2 16.2 2.9 2.9" /><path d="M12 18v4" /><path d="m4.9 19.1 2.9-2.9" /><path d="M2 12h4" /><path d="m4.9 4.9 2.9 2.9" /></svg>
+                  AUTO
+                </button>
+                <button
+                  onClick={() => setMode('manual')}
+                  className={`py-2 rounded px-3 text-xs font-medium transition-all flex items-center justify-center gap-2 ${inferenceMode === 'manual'
+                      ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /></svg>
+                  MANUAL
                 </button>
               </div>
             </div>

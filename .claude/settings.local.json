@@ -30,7 +30,11 @@
       "Bash(docker rm:*)",
       "Bash(docker exec:*)",
       "Bash(lsusb:*)",
-      "Bash(dmesg:*)"
+      "Bash(dmesg:*)",
+      "Bash(docker ps:*)",
+      "Bash(pkill:*)",
+      "Bash(taskkill //F //IM docker-compose.exe)",
+      "Bash(docker logs:*)"
     ]
   }
 }
