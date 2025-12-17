@@ -25,7 +25,12 @@
       "Bash(timeout 20 docker-compose logs:*)",
       "Bash(docker-compose:*)",
       "Bash(git restore:*)",
-      "Bash(docker run:*)"
+      "Bash(docker run:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker exec:*)",
+      "Bash(lsusb:*)",
+      "Bash(dmesg:*)"
     ]
   }
 }

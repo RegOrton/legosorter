@@ -8,6 +8,10 @@ services:
       - ./data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # USB camera device mapping (requires WSL2 kernel with UVC drivers)
+    # Uncomment when /dev/video0 is available in WSL2
+    #devices:
+    #  - /dev/video0:/dev/video0
     env_file:
       - .env
     environment:

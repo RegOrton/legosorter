@@ -34,10 +34,15 @@ def get_camera():
     """Get or create camera instance."""
     global camera
     if camera is None:
-        camera = Camera(source=0, width=640, height=480)
+        # Get camera type from settings
+        settings_manager = get_settings_manager()
+        camera_type = settings_manager.get("camera_type")
+
+        logger.info(f"Initializing camera with type: {camera_type}")
+        camera = Camera(source=0, width=640, height=480, camera_type=camera_type)
         try:
             camera.start()
-            logger.info("Camera initialized for streaming")
+            logger.info(f"Camera initialized for streaming (type: {camera_type})")
         except Exception as e:
             logger.error(f"Failed to initialize camera: {e}")
             camera = None
@@ -195,6 +200,14 @@ def update_settings(settings: Dict[str, Any]):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to save settings")
 
+    # If camera_type was changed, reset the global camera instance
+    if "camera_type" in settings:
+        global camera
+        if camera is not None:
+            logger.info("Camera type changed, resetting camera instance")
+            camera.release()
+            camera = None
+
     logger.info(f"Settings updated: {settings}")
     return {"message": "Settings updated successfully", "settings": settings_manager.get_all()}
 
@@ -264,8 +277,17 @@ def get_status():
 
 # Inference endpoints
 @app.post("/inference/start")
-def start_inference(model_path: str = "/app/output/models/lego_embedder_final.pth"):
-    """Start real-time inference on webcam stream."""
+def start_inference(
+    model_path: str = "/app/output/models/lego_embedder_final.pth",
+    mode: str = "auto"
+):
+    """
+    Start real-time inference on webcam stream.
+    
+    Args:
+        model_path: Path to model checkpoint
+        mode: Inference mode - "auto" or "manual"
+    """
     from inference import get_inference_engine
     
     cam = get_camera()
@@ -292,11 +314,16 @@ def start_inference(model_path: str = "/app/output/models/lego_embedder_final.pt
         class_names=class_names
     )
     
+    # Set initial mode
+    success, msg = engine.set_mode(mode)
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+    
     success, msg = engine.start(cam)
     if not success:
         raise HTTPException(status_code=400, detail=msg)
     
-    return {"message": msg}
+    return {"message": f"{msg} (Mode: {mode})"}
 
 @app.post("/inference/stop")
 def stop_inference():
@@ -311,6 +338,19 @@ def stop_inference():
     
     return {"message": msg}
 
+@app.post("/inference/mode")
+def set_inference_mode(mode: str):
+    """Switch inference mode (auto/manual)."""
+    from inference import get_inference_engine
+    
+    engine = get_inference_engine()
+    success, msg = engine.set_mode(mode)
+    
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+    
+    return {"message": msg, "mode": engine.state.mode}
+
 @app.get("/inference/status")
 def get_inference_status():
     """Get current inference results."""
@@ -320,6 +360,8 @@ def get_inference_status():
     
     return {
         "is_running": engine.state.is_running,
+        "mode": engine.state.mode,
+        "auto_state": engine.state.auto_state,
         "fps": engine.state.fps,
         "frame_count": engine.state.frame_count,
         "current_prediction": engine.state.current_prediction,
@@ -331,69 +373,28 @@ def get_inference_status():
 
 @app.post("/inference/classify_now")
 def classify_now():
-    """Perform one-shot classification on current frame."""
+    """
+    Perform one-shot classification on current frame.
+    In Manual mode, this triggers the inference loop.
+    """
     from inference import get_inference_engine
-    import torch
-    import torchvision.transforms as transforms
+    import time
     
-    cam = get_camera()
-    if cam is None:
-        raise HTTPException(status_code=500, detail="Camera not available")
+    engine = get_inference_engine()
     
-    # Get current frame
-    ret, frame = cam.get_frame()
-    if not ret or frame is None:
-        raise HTTPException(status_code=500, detail="Failed to capture frame")
+    if not engine.state.is_running:
+         raise HTTPException(status_code=400, detail="Inference is not running. Start inference first.")
     
-    # Initialize or get inference engine
-    class_names = [
-        "Brick 2x4", "Brick 2x2", "Plate 2x4", "Plate 2x2", "Slope 45°",
-        "Tile 1x2", "Round Brick", "Technic Brick", "Window", "Door"
-    ]
+    # Trigger classification
+    engine.trigger()
     
-    engine = get_inference_engine(
-        model_path="/app/output/models/lego_embedder_final.pth" if Path("/app/output/models/lego_embedder_final.pth").exists() else None,
-        num_classes=len(class_names),
-        class_names=class_names
-    )
+    # Wait briefly for result (optional, or just return 'triggered')
+    # Since it runs in a separate thread, we can't easily return the exact result *here* 
+    # without a sync mechanism, but for UI responsiveness it's often better to just say "Triggered"
+    # and let the status poll pick it up.
+    # However, to be nice to the legacy API contract, we could try to wait a split second.
     
-    # Preprocess frame
-    try:
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        transform = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-        
-        input_tensor = transform(frame_rgb).unsqueeze(0).to(engine.device)
-        
-        # Run inference
-        with torch.no_grad():
-            logits, embeddings = engine.model(input_tensor)
-            probabilities = torch.softmax(logits, dim=1)
-            confidence, predicted_class = torch.max(probabilities, dim=1)
-        
-        # Return results
-        return {
-            "class_id": predicted_class.item(),
-            "class_name": class_names[predicted_class.item()],
-            "confidence": confidence.item(),
-            "probabilities": probabilities[0].cpu().numpy().tolist(),
-            "all_classes": [
-                {
-                    "name": class_names[i],
-                    "probability": probabilities[0][i].item()
-                }
-                for i in range(len(class_names))
-            ]
-        }
-    
-    except Exception as e:
-        logger.error(f"Classification error: {e}")
-        raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
+    return {"message": "Classification triggered", "status": "ok"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

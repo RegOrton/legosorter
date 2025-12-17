@@ -1,12 +1,15 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function Home() {
   const [classification, setClassification] = useState<any>(null);
   const [isClassifying, setIsClassifying] = useState(false);
   const [inferenceStatus, setInferenceStatus] = useState<any>(null);
+  const [inferenceMode, setInferenceMode] = useState<'auto' | 'manual'>('auto');
   const [boundingBoxes, setBoundingBoxes] = useState<any[]>([]);
   const [centerDetected, setCenterDetected] = useState(false);
+  const [videoKey, setVideoKey] = useState(0); // Key to force video reload
+  const videoRef = useRef<HTMLImageElement>(null);
 
   // Poll inference status every second
   useEffect(() => {
@@ -20,6 +23,9 @@ export default function Home() {
         }
         const data = await res.json();
         setInferenceStatus(data);
+        if (data.mode) {
+          setInferenceMode(data.mode);
+        }
         if (data.current_prediction) {
           setClassification(data.current_prediction);
         }
@@ -53,6 +59,15 @@ export default function Home() {
     }
   };
 
+  const setMode = async (mode: 'auto' | 'manual') => {
+    try {
+      await fetch(`http://localhost:8000/inference/mode?mode=${mode}`, { method: 'POST' });
+      setInferenceMode(mode);
+    } catch (e) {
+      console.error('Failed to set mode', e);
+    }
+  };
+
   return (
     <div className="flex flex-col text-zinc-50 h-full">
       <main className="flex-1 p-6 grid grid-cols-1 md:grid-cols-12 gap-6 max-w-[1600px] mx-auto w-full">
@@ -64,9 +79,15 @@ export default function Home() {
 
             {/* Video Stream */}
             <img
-              src="http://localhost:8000/video/stream"
+              key={videoKey}
+              ref={videoRef}
+              src={`http://localhost:8000/video/stream?t=${videoKey}`}
               alt="Live Webcam Feed"
               className="absolute inset-0 w-full h-full object-cover z-0"
+              onError={() => {
+                // Reload the video stream after 1 second if it fails
+                setTimeout(() => setVideoKey(prev => prev + 1), 1000);
+              }}
             />
 
             {/* SVG Overlay for Bounding Boxes and Center Indicator */}
