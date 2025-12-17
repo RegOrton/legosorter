@@ -8,3 +8,4 @@ torchvision
 fastapi
 uvicorn
 tqdm
+python-multipart
