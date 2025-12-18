@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 class LegoSynthesizer:
-    def __init__(self, background_path, output_size=(224, 224)):
+    def __init__(self, background_path, output_size=(224, 224), use_calibration=True):
         """
         Enhanced synthesizer for generating realistic training samples.
         Addresses sim-to-real domain gap with perspective transforms, shadows,
@@ -14,11 +14,37 @@ class LegoSynthesizer:
         Args:
             background_path (str or Path): Path to background image OR directory of backgrounds.
             output_size (tuple): Target size for the output model input (width, height).
+            use_calibration (bool): If True, use calibration background if available (recommended).
         """
         self.output_size = output_size
         self.background_path = Path(background_path)
         self.backgrounds = []
+        self.calibration_bg = None
+        self.use_calibration = use_calibration
+        self._load_calibration_background()
         self._load_backgrounds()
+
+    def _load_calibration_background(self):
+        """Load calibration background if available and enabled."""
+        if not self.use_calibration:
+            return
+
+        try:
+            # Determine calibration path
+            base_path = Path("/app/output") if Path("/app/output").exists() else Path(__file__).parent.parent / "output"
+            calib_path = base_path / "calibration_bg.npy"
+
+            if calib_path.exists():
+                # Load numpy array (float32)
+                bg_frame = np.load(str(calib_path))
+                # Convert to uint8 BGR for OpenCV
+                self.calibration_bg = bg_frame.astype(np.uint8)
+                print(f"[Synthesizer] Loaded calibration background: {self.calibration_bg.shape}")
+            else:
+                print("[Synthesizer] No calibration background found, using synthetic backgrounds")
+        except Exception as e:
+            print(f"[Synthesizer] Failed to load calibration: {e}")
+            self.calibration_bg = None
 
     def _load_backgrounds(self):
         """Load single background or multiple backgrounds from directory."""
@@ -36,11 +62,15 @@ class LegoSynthesizer:
 
     def _get_random_crop_background(self):
         """Returns a random crop from a randomly selected background."""
-        # Select random background
-        bg_path = random.choice(self.backgrounds)
-        bg = cv2.imread(str(bg_path))
-        if bg is None:
-            raise ValueError(f"Failed to load background image: {bg_path}")
+        # Prefer calibration background if available
+        if self.calibration_bg is not None:
+            bg = self.calibration_bg
+        else:
+            # Select random background from fallback directory
+            bg_path = random.choice(self.backgrounds)
+            bg = cv2.imread(str(bg_path))
+            if bg is None:
+                raise ValueError(f"Failed to load background image: {bg_path}")
 
         h, w = bg.shape[:2]
         th, tw = self.output_size

@@ -7,6 +7,7 @@ export default function TrainingPage() {
     const [images, setImages] = useState<any>(null);
     const [logs, setLogs] = useState<string[]>([]);
     const [settings, setSettings] = useState<any>(null);
+    const [calibrationBg, setCalibrationBg] = useState<any>(null);
     const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
     const API_URL = "http://localhost:8000";
@@ -34,9 +35,25 @@ export default function TrainingPage() {
         }
     };
 
+    const fetchCalibrationBg = async () => {
+        try {
+            const res = await fetch(`${API_URL}/inference/detector/calibration_bg`);
+            if (res.ok) {
+                const data = await res.json();
+                setCalibrationBg(data);
+            } else {
+                setCalibrationBg(null);
+            }
+        } catch (e) {
+            console.error("Failed to fetch calibration background", e);
+            setCalibrationBg(null);
+        }
+    };
+
     useEffect(() => {
-        // Fetch settings on mount
+        // Fetch settings and calibration on mount
         fetchSettings();
+        fetchCalibrationBg();
 
         // Poll status rapidly for flicker mode (200ms = 5 times per second)
         pollInterval.current = setInterval(fetchStatus, 200);
@@ -253,6 +270,24 @@ export default function TrainingPage() {
 
                 {/* Right Column: Controls */}
                 <section className="col-span-1 md:col-span-4 flex flex-col gap-6">
+                    {/* Calibration Background Display */}
+                    {calibrationBg && (
+                        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 shadow-lg">
+                            <h2 className="text-sm font-medium text-zinc-400 mb-4">CALIBRATION BACKGROUND</h2>
+                            <div className="bg-zinc-950 rounded-lg border border-zinc-800 overflow-hidden">
+                                <img
+                                    src={`data:image/jpeg;base64,${calibrationBg.calibration_image}`}
+                                    alt="Calibration Background"
+                                    className="w-full h-auto"
+                                />
+                            </div>
+                            <div className="mt-3 text-xs text-zinc-500">
+                                <p>Resolution: {calibrationBg.resolution.width} × {calibrationBg.resolution.height}</p>
+                                <p className="mt-1 text-emerald-500">Training uses this background for realistic augmentation</p>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 flex flex-col gap-6 shadow-lg">
                         <div>
                             <h2 className="text-sm font-medium text-zinc-400 mb-4">TRAINING CONTROL</h2>

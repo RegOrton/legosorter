@@ -624,6 +624,46 @@ def get_detector_debug():
         }
     }
 
+@app.get("/inference/detector/calibration_bg")
+def get_calibration_background():
+    """
+    Get the calibration background image.
+
+    Returns base64-encoded image of calibration background.
+    """
+    import base64
+    import numpy as np
+    from pathlib import Path
+
+    # Determine calibration path
+    base_path = Path("/app/output") if Path("/app/output").exists() else Path(__file__).parent.parent / "output"
+    calib_path = base_path / "calibration_bg.npy"
+
+    if not calib_path.exists():
+        raise HTTPException(status_code=404, detail="No calibration background found. Calibrate detector first.")
+
+    try:
+        # Load numpy array (float32)
+        bg_frame = np.load(str(calib_path))
+        # Convert to uint8 BGR for encoding
+        bg_frame = bg_frame.astype(np.uint8)
+
+        # Get resolution
+        h, w = bg_frame.shape[:2]
+
+        # Encode as JPEG
+        _, buffer = cv2.imencode('.jpg', bg_frame)
+        img_base64 = base64.b64encode(buffer).decode('utf-8')
+
+        return {
+            "calibration_image": img_base64,
+            "resolution": {"width": w, "height": h},
+            "exists": True
+        }
+    except Exception as e:
+        logger.error(f"Failed to load calibration background: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load calibration: {str(e)}")
+
 # Video file management endpoints
 @app.post("/video/upload")
 async def upload_video(file: UploadFile = File(...)):

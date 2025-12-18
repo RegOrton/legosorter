@@ -134,18 +134,43 @@ class Trainer:
                     state.log("Please add .dat files to the directory, or use a different dataset.")
                     state.is_running = False
                     return
+
+                # Load calibration background if available
+                base_path = Path("/app/output") if Path("/app/output").exists() else Path(__file__).parent.parent / "output"
+                calib_path = base_path / "calibration_bg.npy"
+                background_path = None
+
+                if calib_path.exists():
+                    # Save calibration as temporary image file for LDView
+                    import numpy as np
+                    bg_frame = np.load(str(calib_path))
+                    temp_bg_path = base_path / "calibration_bg_temp.jpg"
+                    cv2.imwrite(str(temp_bg_path), bg_frame.astype(np.uint8))
+                    background_path = str(temp_bg_path)
+                    state.log(f"Using calibration background for training: {bg_frame.shape}")
+                else:
+                    state.log("No calibration found - using default backgrounds")
+
                 # Generate 1000 triplets per epoch on-the-fly
                 samples_per_epoch = limit if limit else 1000
                 dataloader = get_ldview_dataloader(
                     dat_dir,
                     batch_size=batch_size,
-                    samples_per_epoch=samples_per_epoch
+                    samples_per_epoch=samples_per_epoch,
+                    background_path=background_path
                 )
                 state.log(f"Loaded LDView on-the-fly renderer with {dat_files_count} .dat files")
                 state.log(f"Will generate {samples_per_epoch} triplets per epoch in real-time")
             else:
+                # Rebrickable uses the synthesizer which automatically loads calibration background
                 dataloader = get_dataloader(data_dir, batch_size=batch_size, limit=limit)
-                state.log("Loaded Rebrickable dataset")
+                # Check if calibration background was loaded by synthesizer
+                base_path = Path("/app/output") if Path("/app/output").exists() else Path(__file__).parent.parent / "output"
+                calib_path = base_path / "calibration_bg.npy"
+                if calib_path.exists():
+                    state.log("Loaded Rebrickable dataset with calibration background")
+                else:
+                    state.log("Loaded Rebrickable dataset with synthetic backgrounds")
 
             model = LegoEmbeddingNet(embedding_dim=128).to(device)
             state.log("Model loaded.")
