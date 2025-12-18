@@ -9,6 +9,7 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 from model import LegoEmbeddingNet
 from background_diff_detector import BackgroundDiffDetector
+from settings_manager import get_settings_manager
 import cv2
 import numpy as np
 from pathlib import Path
@@ -119,16 +120,28 @@ class InferenceEngine:
         # FPS tracking
         self.frame_times = deque(maxlen=30)
 
+        # Load detector settings from settings manager
+        settings_manager = get_settings_manager()
+        detector_settings = settings_manager.get("detector", {})
+
         # Fast background differencing detector (replaces MOG2)
         self.detector = BackgroundDiffDetector(
-            min_area=1000,
-            max_area=50000,
-            diff_threshold=30,
-            center_tolerance=0.15,
-            edge_margin=20,
-            min_aspect_ratio=0.3,
-            max_aspect_ratio=3.0
+            min_area_percent=detector_settings.get("min_area_percent", 0.001),
+            max_area_percent=detector_settings.get("max_area_percent", 0.15),
+            diff_threshold=detector_settings.get("diff_threshold", 30),
+            center_tolerance=detector_settings.get("center_tolerance", 0.15),
+            edge_margin=detector_settings.get("edge_margin", 20),
+            min_aspect_ratio=detector_settings.get("min_aspect_ratio", 0.3),
+            max_aspect_ratio=detector_settings.get("max_aspect_ratio", 3.0)
         )
+
+        # Try to load saved calibration
+        if self.detector.load_calibration():
+            self.state.is_calibrated = True
+            self.state.calibration_status = "Loaded from disk"
+            logger.info("Loaded saved calibration on startup")
+        else:
+            logger.info("No saved calibration found - calibration required")
 
         # Stability params
         self.stability_counter = 0

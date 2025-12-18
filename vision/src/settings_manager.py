@@ -21,7 +21,17 @@ DEFAULT_SETTINGS = {
     "batch_size": 8,
     "camera_type": "usb",
     "video_file": None,
-    "video_playback_speed": 1.0
+    "video_playback_speed": 1.0,
+    # Detector parameters
+    "detector": {
+        "min_area_percent": 0.001,
+        "max_area_percent": 0.15,
+        "diff_threshold": 30,
+        "center_tolerance": 0.15,
+        "edge_margin": 20,
+        "min_aspect_ratio": 0.3,
+        "max_aspect_ratio": 3.0
+    }
 }
 
 class SettingsManager:

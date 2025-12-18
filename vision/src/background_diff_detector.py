@@ -20,8 +20,8 @@ class BackgroundDiffDetector:
 
     def __init__(
         self,
-        min_area: int = 1000,
-        max_area: int = 50000,
+        min_area_percent: float = 0.001,
+        max_area_percent: float = 0.15,
         diff_threshold: int = 30,
         center_tolerance: float = 0.15,
         edge_margin: int = 20,
@@ -32,16 +32,16 @@ class BackgroundDiffDetector:
         Initialize the detector.
 
         Args:
-            min_area: Minimum contour area (filters noise)
-            max_area: Maximum contour area (prevents full-frame false positives)
+            min_area_percent: Minimum contour area as fraction of frame (0.001 = 0.1% of frame, filters noise)
+            max_area_percent: Maximum contour area as fraction of frame (0.15 = 15% of frame)
             diff_threshold: Brightness difference threshold for detecting changes
             center_tolerance: Fraction of frame center to consider "centered" (0.15 = ±15%)
             edge_margin: Pixels from frame edge where object is considered "touching"
             min_aspect_ratio: Minimum width/height ratio for valid objects
             max_aspect_ratio: Maximum width/height ratio for valid objects
         """
-        self.min_area = min_area
-        self.max_area = max_area
+        self.min_area_percent = min_area_percent
+        self.max_area_percent = max_area_percent
         self.diff_threshold = diff_threshold
         self.center_tolerance = center_tolerance
         self.edge_margin = edge_margin
@@ -54,7 +54,7 @@ class BackgroundDiffDetector:
         # Morphological kernel for noise reduction
         self.kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
-    def calibrate(self, frame: np.ndarray) -> bool:
+    def calibrate(self, frame: np.ndarray, save_to_disk: bool = True) -> bool:
         """
         Calibrate background by storing reference frame.
 
@@ -62,6 +62,7 @@ class BackgroundDiffDetector:
 
         Args:
             frame: Input frame (BGR)
+            save_to_disk: If True, saves calibration to disk for persistence
 
         Returns:
             True if calibration succeeded
@@ -74,6 +75,11 @@ class BackgroundDiffDetector:
         self.bg_frame = frame.copy().astype(np.float32)
         self.is_calibrated = True
         logger.info(f"Background calibrated: {frame.shape}")
+
+        # Save to disk for persistence
+        if save_to_disk:
+            self._save_calibration()
+
         return True
 
     def reset_calibration(self) -> None:
@@ -104,6 +110,11 @@ class BackgroundDiffDetector:
         h, w = frame.shape[:2]
         frame_center_x, frame_center_y = w // 2, h // 2
 
+        # Calculate min_area and max_area from percentage of frame
+        frame_area = h * w
+        min_area = int(frame_area * self.min_area_percent)
+        max_area = int(frame_area * self.max_area_percent)
+
         # Convert to float for differencing
         current_frame = frame.astype(np.float32)
 
@@ -133,7 +144,7 @@ class BackgroundDiffDetector:
             area = cv2.contourArea(contour)
 
             # Filter by area
-            if area < self.min_area or area > self.max_area:
+            if area < min_area or area > max_area:
                 continue
 
             valid_contour_count += 1
@@ -244,6 +255,7 @@ class BackgroundDiffDetector:
         cv2.rectangle(debug_frame, (0, h - self.edge_margin), (w, h), (0, 0, 255), 1)
 
         # Draw bounding boxes with color coding
+        frame_area = h * w
         for bbox in bounding_boxes:
             x, y, width, height = bbox['x'], bbox['y'], bbox['width'], bbox['height']
 
@@ -260,8 +272,9 @@ class BackgroundDiffDetector:
             # Draw center point
             cv2.circle(debug_frame, (bbox['center_x'], bbox['center_y']), 3, color, -1)
 
-            # Add text label
-            label = f"A:{bbox['area']} R:{bbox['aspect_ratio']:.2f}"
+            # Add text label with area percentage
+            area_percent = (bbox['area'] / frame_area) * 100
+            label = f"{area_percent:.1f}% AR:{bbox['aspect_ratio']:.2f}"
             cv2.putText(
                 debug_frame,
                 label,
@@ -291,8 +304,8 @@ class BackgroundDiffDetector:
             'is_calibrated': self.is_calibrated,
             'bg_frame_shape': tuple(self.bg_frame.shape) if self.bg_frame is not None else None,
             'params': {
-                'min_area': self.min_area,
-                'max_area': self.max_area,
+                'min_area_percent': self.min_area_percent,
+                'max_area_percent': self.max_area_percent,
                 'diff_threshold': self.diff_threshold,
                 'center_tolerance': self.center_tolerance,
                 'edge_margin': self.edge_margin,
@@ -300,3 +313,42 @@ class BackgroundDiffDetector:
                 'max_aspect_ratio': self.max_aspect_ratio,
             }
         }
+
+    def _save_calibration(self) -> bool:
+        """Save calibration background frame to disk."""
+        if self.bg_frame is None:
+            return False
+
+        try:
+            # Determine save path
+            base_path = Path("/app/output") if Path("/app/output").exists() else Path(__file__).parent.parent / "output"
+            base_path.mkdir(parents=True, exist_ok=True)
+            calib_path = base_path / "calibration_bg.npy"
+
+            # Save as numpy array to preserve float32 precision
+            np.save(str(calib_path), self.bg_frame)
+            logger.info(f"Saved calibration to {calib_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save calibration: {e}")
+            return False
+
+    def load_calibration(self) -> bool:
+        """Load calibration background frame from disk."""
+        try:
+            # Determine load path
+            base_path = Path("/app/output") if Path("/app/output").exists() else Path(__file__).parent.parent / "output"
+            calib_path = base_path / "calibration_bg.npy"
+
+            if not calib_path.exists():
+                logger.info("No saved calibration found")
+                return False
+
+            # Load numpy array
+            self.bg_frame = np.load(str(calib_path))
+            self.is_calibrated = True
+            logger.info(f"Loaded calibration from {calib_path}, shape: {self.bg_frame.shape}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to load calibration: {e}")
+            return False

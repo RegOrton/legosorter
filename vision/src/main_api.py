@@ -140,6 +140,21 @@ def get_camera_type():
         "available_types": ["usb", "csi", "http", "video_file"]
     }
 
+@app.get("/camera/resolution")
+def get_camera_resolution():
+    """Get current camera frame resolution."""
+    cam = get_camera()
+    if cam is None:
+        return {"width": 640, "height": 480, "error": "Camera not initialized"}
+
+    ret, frame = cam.get_frame()
+    if ret and frame is not None:
+        h, w = frame.shape[:2]
+        return {"width": w, "height": h}
+
+    # Return defaults if unable to get frame
+    return {"width": 640, "height": 480}
+
 @app.post("/camera/type")
 def set_camera_type(camera_type: str):
     """
@@ -496,8 +511,8 @@ def get_calibration_status():
 
 @app.post("/inference/detector/params")
 def update_detector_params(
-    min_area: int = None,
-    max_area: int = None,
+    min_area_percent: float = None,
+    max_area_percent: float = None,
     diff_threshold: int = None,
     center_tolerance: float = None,
     edge_margin: int = None
@@ -506,8 +521,8 @@ def update_detector_params(
     Update detector parameters for fine-tuning object detection.
 
     Args:
-        min_area: Minimum object area in pixels (default: 1000)
-        max_area: Maximum object area in pixels (default: 50000)
+        min_area_percent: Minimum object area as % of frame (default: 0.001 = 0.1% of frame)
+        max_area_percent: Maximum object area as % of frame (default: 0.15 = 15% of frame)
         diff_threshold: Difference threshold for background subtraction (default: 30, lower = more sensitive)
         center_tolerance: Fraction of frame center for "centered" detection (default: 0.15)
         edge_margin: Pixels from edge where object is considered touching (default: 20)
@@ -521,13 +536,13 @@ def update_detector_params(
 
     updated_params = {}
 
-    if min_area is not None:
-        engine.detector.min_area = min_area
-        updated_params['min_area'] = min_area
+    if min_area_percent is not None:
+        engine.detector.min_area_percent = min_area_percent
+        updated_params['min_area_percent'] = min_area_percent
 
-    if max_area is not None:
-        engine.detector.max_area = max_area
-        updated_params['max_area'] = max_area
+    if max_area_percent is not None:
+        engine.detector.max_area_percent = max_area_percent
+        updated_params['max_area_percent'] = max_area_percent
 
     if diff_threshold is not None:
         engine.detector.diff_threshold = diff_threshold
@@ -541,14 +556,27 @@ def update_detector_params(
         engine.detector.edge_margin = edge_margin
         updated_params['edge_margin'] = edge_margin
 
+    # Save updated params to settings for persistence
+    if updated_params:
+        from settings_manager import get_settings_manager
+        settings_manager = get_settings_manager()
+
+        # Get current detector settings
+        current_detector = settings_manager.get("detector", {})
+        current_detector.update(updated_params)
+
+        # Save back to settings
+        settings_manager.set("detector", current_detector)
+        logger.info(f"Saved detector params to settings: {updated_params}")
+
     logger.info(f"Updated detector params: {updated_params}")
 
     return {
         "message": "Detector parameters updated",
         "updated": updated_params,
         "current_params": {
-            "min_area": engine.detector.min_area,
-            "max_area": engine.detector.max_area,
+            "min_area_percent": engine.detector.min_area_percent,
+            "max_area_percent": engine.detector.max_area_percent,
             "diff_threshold": engine.detector.diff_threshold,
             "center_tolerance": engine.detector.center_tolerance,
             "edge_margin": engine.detector.edge_margin,
@@ -590,8 +618,8 @@ def get_detector_debug():
         "center_detected": center_detected,
         "debug_image": img_base64,
         "detector_params": {
-            "min_area": engine.detector.min_area,
-            "max_area": engine.detector.max_area,
+            "min_area_percent": engine.detector.min_area_percent,
+            "max_area_percent": engine.detector.max_area_percent,
             "diff_threshold": engine.detector.diff_threshold,
         }
     }

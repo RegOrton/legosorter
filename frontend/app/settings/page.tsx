@@ -18,8 +18,8 @@ export default function SettingsPage() {
     const [videos, setVideos] = useState<Array<{filename: string, size: number, modified: number}>>([]);
 
     // Detector settings
-    const [minArea, setMinArea] = useState(1000);
-    const [maxArea, setMaxArea] = useState(50000);
+    const [minAreaPercent, setMinAreaPercent] = useState(0.1);
+    const [maxAreaPercent, setMaxAreaPercent] = useState(15);
     const [diffThreshold, setDiffThreshold] = useState(30);
     const [centerTolerance, setCenterTolerance] = useState(0.15);
     const [edgeMargin, setEdgeMargin] = useState(20);
@@ -62,8 +62,8 @@ export default function SettingsPage() {
 
             if (data.detector_info?.params) {
                 const params = data.detector_info.params;
-                setMinArea(params.min_area || 1000);
-                setMaxArea(params.max_area || 50000);
+                setMinAreaPercent((params.min_area_percent || 0.001) * 100);
+                setMaxAreaPercent((params.max_area_percent || 0.15) * 100);
                 setDiffThreshold(params.diff_threshold || 30);
                 setCenterTolerance(params.center_tolerance || 0.15);
                 setEdgeMargin(params.edge_margin || 20);
@@ -124,7 +124,7 @@ export default function SettingsPage() {
         setSaveMessage(null);
 
         try {
-            const url = `${API_URL}/inference/detector/params?min_area=${minArea}&max_area=${maxArea}&diff_threshold=${diffThreshold}&center_tolerance=${centerTolerance}&edge_margin=${edgeMargin}`;
+            const url = `${API_URL}/inference/detector/params?min_area_percent=${minAreaPercent / 100}&max_area_percent=${maxAreaPercent / 100}&diff_threshold=${diffThreshold}&center_tolerance=${centerTolerance}&edge_margin=${edgeMargin}`;
             const res = await fetch(url, {
                 method: 'POST',
                 signal: AbortSignal.timeout(3000)
@@ -278,8 +278,8 @@ export default function SettingsPage() {
     };
 
     const resetDetectorParams = () => {
-        setMinArea(1000);
-        setMaxArea(50000);
+        setMinAreaPercent(0.1);
+        setMaxAreaPercent(15);
         setDiffThreshold(30);
         setCenterTolerance(0.15);
         setEdgeMargin(20);
@@ -296,7 +296,7 @@ export default function SettingsPage() {
         if (activeSection === 'detector') {
             const interval = setInterval(() => {
                 if (debugImage) refreshDebugView();
-            }, 2000);
+            }, 500);
             return () => clearInterval(interval);
         }
     }, [activeSection, debugImage]);
@@ -645,39 +645,39 @@ export default function SettingsPage() {
                                 <div className="space-y-5">
                                     <div>
                                         <label className="flex justify-between text-sm text-zinc-300 mb-2">
-                                            <span>Minimum Area (pixels)</span>
-                                            <span className="font-mono text-emerald-400">{minArea}</span>
+                                            <span>Minimum Area (% of frame)</span>
+                                            <span className="font-mono text-emerald-400">{minAreaPercent.toFixed(1)}%</span>
                                         </label>
                                         <input
                                             type="range"
-                                            min="100"
-                                            max="5000"
-                                            step="100"
-                                            value={minArea}
-                                            onChange={(e) => setMinArea(parseInt(e.target.value))}
+                                            min="0.01"
+                                            max="5"
+                                            step="0.1"
+                                            value={minAreaPercent}
+                                            onChange={(e) => setMinAreaPercent(parseFloat(e.target.value))}
                                             className="w-full"
                                         />
                                         <p className="text-xs text-zinc-600 mt-1">
-                                            Objects smaller than this are ignored. Reduce if bricks are too small.
+                                            Objects smaller than this are ignored. 0.1% = good default for noise filtering.
                                         </p>
                                     </div>
 
                                     <div>
                                         <label className="flex justify-between text-sm text-zinc-300 mb-2">
-                                            <span>Maximum Area (pixels)</span>
-                                            <span className="font-mono text-emerald-400">{maxArea}</span>
+                                            <span>Maximum Area (% of frame)</span>
+                                            <span className="font-mono text-emerald-400">{maxAreaPercent}%</span>
                                         </label>
                                         <input
                                             type="range"
-                                            min="10000"
-                                            max="200000"
-                                            step="5000"
-                                            value={maxArea}
-                                            onChange={(e) => setMaxArea(parseInt(e.target.value))}
+                                            min="1"
+                                            max="100"
+                                            step="1"
+                                            value={maxAreaPercent}
+                                            onChange={(e) => setMaxAreaPercent(parseInt(e.target.value))}
                                             className="w-full"
                                         />
                                         <p className="text-xs text-zinc-600 mt-1">
-                                            Objects larger than this are ignored.
+                                            Objects larger than this % of the frame are ignored. 15-30% = good range.
                                         </p>
                                     </div>
 

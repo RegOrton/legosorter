@@ -12,6 +12,7 @@ export default function Home() {
   const videoRef = useRef<HTMLImageElement>(null);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [calibrationStatus, setCalibrationStatus] = useState<any>(null);
+  const [frameResolution, setFrameResolution] = useState({ width: 640, height: 480 });
 
   // Poll inference status every second
   useEffect(() => {
@@ -56,6 +57,26 @@ export default function Home() {
         // Silently fail
       }
     }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch frame resolution on mount and periodically
+  useEffect(() => {
+    const fetchResolution = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/camera/resolution');
+        if (res.ok) {
+          const data = await res.json();
+          setFrameResolution(data);
+        }
+      } catch (e) {
+        // Use defaults if fetch fails
+      }
+    };
+
+    fetchResolution();
+    const interval = setInterval(fetchResolution, 5000);
 
     return () => clearInterval(interval);
   }, []);
@@ -139,13 +160,13 @@ export default function Home() {
             />
 
             {/* SVG Overlay for Bounding Boxes and Center Indicator */}
-            <svg className="absolute inset-0 w-full h-full z-10" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid slice">
+            <svg className="absolute inset-0 w-full h-full z-10" viewBox={`0 0 ${frameResolution.width} ${frameResolution.height}`} preserveAspectRatio="xMidYMid slice">
               {/* Center-frame crosshair indicator */}
               <g className={`transition-all duration-300 ${centerDetected ? 'opacity-100' : 'opacity-40'}`}>
                 {/* Center crosshair */}
                 <circle
-                  cx="320"
-                  cy="240"
+                  cx={frameResolution.width / 2}
+                  cy={frameResolution.height / 2}
                   r="40"
                   fill="none"
                   stroke={centerDetected ? "#10b981" : "#6b7280"}
@@ -153,8 +174,8 @@ export default function Home() {
                   className={centerDetected ? "animate-pulse" : ""}
                 />
                 <circle
-                  cx="320"
-                  cy="240"
+                  cx={frameResolution.width / 2}
+                  cy={frameResolution.height / 2}
                   r="30"
                   fill="none"
                   stroke={centerDetected ? "#10b981" : "#6b7280"}
@@ -162,15 +183,15 @@ export default function Home() {
                   opacity="0.5"
                 />
                 {/* Crosshair lines */}
-                <line x1="320" y1="200" x2="320" y2="220" stroke={centerDetected ? "#10b981" : "#6b7280"} strokeWidth="2" />
-                <line x1="320" y1="260" x2="320" y2="280" stroke={centerDetected ? "#10b981" : "#6b7280"} strokeWidth="2" />
-                <line x1="280" y1="240" x2="300" y2="240" stroke={centerDetected ? "#10b981" : "#6b7280"} strokeWidth="2" />
-                <line x1="340" y1="240" x2="360" y2="240" stroke={centerDetected ? "#10b981" : "#6b7280"} strokeWidth="2" />
+                <line x1={frameResolution.width / 2} y1={frameResolution.height / 2 - 40} x2={frameResolution.width / 2} y2={frameResolution.height / 2 - 20} stroke={centerDetected ? "#10b981" : "#6b7280"} strokeWidth="2" />
+                <line x1={frameResolution.width / 2} y1={frameResolution.height / 2 + 20} x2={frameResolution.width / 2} y2={frameResolution.height / 2 + 40} stroke={centerDetected ? "#10b981" : "#6b7280"} strokeWidth="2" />
+                <line x1={frameResolution.width / 2 - 40} y1={frameResolution.height / 2} x2={frameResolution.width / 2 - 20} y2={frameResolution.height / 2} stroke={centerDetected ? "#10b981" : "#6b7280"} strokeWidth="2" />
+                <line x1={frameResolution.width / 2 + 20} y1={frameResolution.height / 2} x2={frameResolution.width / 2 + 40} y2={frameResolution.height / 2} stroke={centerDetected ? "#10b981" : "#6b7280"} strokeWidth="2" />
 
                 {/* Center dot */}
                 <circle
-                  cx="320"
-                  cy="240"
+                  cx={frameResolution.width / 2}
+                  cy={frameResolution.height / 2}
                   r="3"
                   fill={centerDetected ? "#10b981" : "#6b7280"}
                   className={centerDetected ? "animate-pulse" : ""}
