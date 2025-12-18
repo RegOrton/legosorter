@@ -81,25 +81,32 @@ class InferenceState:
 
 class InferenceEngine:
     """Real-time inference engine for webcam stream."""
-    
-    def __init__(self, model_path=None, num_classes=10, class_names=None):
+
+    def __init__(self, model_path=None, reference_db_path=None, num_classes=10, class_names=None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.num_classes = num_classes
         self.class_names = class_names or [f"Class_{i}" for i in range(num_classes)]
 
-        # Load model
-        self.model = LegoClassifier(embedding_dim=128, num_classes=num_classes).to(self.device)
+        # Load embedding model (no classification head needed for nearest-neighbor)
+        from model import LegoEmbeddingNet
+        self.model = LegoEmbeddingNet(embedding_dim=128).to(self.device)
 
         if model_path and Path(model_path).exists():
             try:
-                # Load embedding weights
                 state_dict = torch.load(model_path, map_location=self.device)
-                self.model.embedder.load_state_dict(state_dict, strict=False)
-                logger.info(f"Loaded model from {model_path}")
+                self.model.load_state_dict(state_dict)
+                logger.info(f"Loaded embedding model from {model_path}")
             except Exception as e:
                 logger.warning(f"Could not load model: {e}. Using untrained model.")
 
         self.model.eval()
+
+        # Load reference database for nearest-neighbor classification
+        self.reference_db = None
+        if reference_db_path and Path(reference_db_path).exists():
+            self._load_reference_db(reference_db_path)
+        else:
+            logger.warning("No reference database found. Classification will use generic class names.")
 
         # Image preprocessing
         self.transform = transforms.Compose([
@@ -147,7 +154,45 @@ class InferenceEngine:
         self.stability_counter = 0
         self.stability_threshold = 8  # frames required for stability
         self.position_tolerance = 5  # pixels of movement allowed
-    
+
+    def _load_reference_db(self, db_path):
+        """Load reference embedding database for nearest-neighbor classification."""
+        try:
+            data = np.load(str(db_path), allow_pickle=True)
+            self.reference_db = {
+                'part_ids': data['part_ids'].tolist(),
+                'embeddings': data['embeddings'],
+                'metadata': data['metadata'].tolist() if 'metadata' in data else []
+            }
+            logger.info(f"Loaded reference database with {len(self.reference_db['part_ids'])} parts")
+            logger.info(f"Parts: {', '.join(self.reference_db['part_ids'][:10])}...")
+        except Exception as e:
+            logger.error(f"Failed to load reference database: {e}")
+            self.reference_db = None
+
+    def _find_nearest_neighbor(self, embedding):
+        """Find nearest neighbor in reference database using cosine similarity."""
+        if self.reference_db is None:
+            return None, 0.0
+
+        # Normalize query embedding
+        embedding_norm = embedding / (np.linalg.norm(embedding) + 1e-8)
+
+        # Normalize reference embeddings
+        ref_embeddings = self.reference_db['embeddings']
+        ref_norms = np.linalg.norm(ref_embeddings, axis=1, keepdims=True) + 1e-8
+        ref_embeddings_norm = ref_embeddings / ref_norms
+
+        # Compute cosine similarity
+        similarities = np.dot(ref_embeddings_norm, embedding_norm)
+
+        # Find best match
+        best_idx = np.argmax(similarities)
+        best_similarity = similarities[best_idx]
+        best_part = self.reference_db['part_ids'][best_idx]
+
+        return best_part, float(best_similarity)
+
     def calibrate_background(self, frame):
         """
         Calibrate background from current frame.
@@ -277,29 +322,41 @@ class InferenceEngine:
         return bounding_boxes, center_detected
     
     def _run_classifier(self, frame):
-        """Run the actual classification model."""
+        """Run classification using nearest-neighbor search in embedding space."""
         try:
-             # Convert BGR to RGB
+            # Convert BGR to RGB
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
+
             # Transform
             input_tensor = self.transform(frame_rgb).unsqueeze(0).to(self.device)
-            
-            # Run inference
+
+            # Get embedding
             with torch.no_grad():
-                logits, embeddings = self.model(input_tensor)
-                probabilities = torch.softmax(logits, dim=1)
-                confidence, predicted_class = torch.max(probabilities, dim=1)
-            
-            # Store results
-            prediction = {
-                'class_id': predicted_class.item(),
-                'class_name': self.class_names[predicted_class.item()],
-                'confidence': confidence.item(),
-                'probabilities': probabilities[0].cpu().numpy().tolist(),
-                'timestamp': time.time()
-            }
-            
+                embedding = self.model(input_tensor)
+                embedding = embedding.cpu().numpy().flatten()
+
+            # Find nearest neighbor in reference database
+            part_id, similarity = self._find_nearest_neighbor(embedding)
+
+            if part_id is not None:
+                # Use nearest-neighbor result
+                prediction = {
+                    'class_id': -1,  # Not used for nearest-neighbor
+                    'class_name': part_id,
+                    'confidence': similarity,
+                    'probabilities': [],  # Not applicable for nearest-neighbor
+                    'timestamp': time.time()
+                }
+            else:
+                # No reference database, use generic class name
+                prediction = {
+                    'class_id': 0,
+                    'class_name': "Unknown",
+                    'confidence': 0.0,
+                    'probabilities': [],
+                    'timestamp': time.time()
+                }
+
             self.state.current_prediction = prediction
             self.state.predictions.append(prediction)
             
@@ -410,12 +467,22 @@ class InferenceEngine:
 # Global inference engine instance
 inference_engine = None
 
-def get_inference_engine(model_path=None, num_classes=10, class_names=None):
+def get_inference_engine(model_path=None, reference_db_path=None, num_classes=10, class_names=None):
     """Get or create the global inference engine."""
     global inference_engine
     if inference_engine is None:
+        # Default paths if not provided
+        if model_path is None:
+            base_path = Path("/app/output") if Path("/app/output").exists() else Path(__file__).parent.parent / "output"
+            model_path = base_path / "models" / "lego_embedder_final.pth"
+
+        if reference_db_path is None:
+            base_path = Path("/app/output") if Path("/app/output").exists() else Path(__file__).parent.parent / "output"
+            reference_db_path = base_path / "reference_db.npz"
+
         inference_engine = InferenceEngine(
             model_path=model_path,
+            reference_db_path=reference_db_path,
             num_classes=num_classes,
             class_names=class_names
         )

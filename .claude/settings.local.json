@@ -34,7 +34,16 @@
       "Bash(docker ps:*)",
       "Bash(pkill:*)",
       "Bash(taskkill //F //IM docker-compose.exe)",
-      "Bash(docker logs:*)"
+      "Bash(docker logs:*)",
+      "Bash(for i in {1..10})",
+      "Bash(do echo \"Test $i:\")",
+      "Bash(done)",
+      "Bash(git -C \"c:\\Users\\regor\\OneDrive\\Documents\\GitHub\\legosorter\" status)",
+      "Bash(git -C \"c:\\Users\\regor\\OneDrive\\Documents\\GitHub\\legosorter\" log -1 --oneline)",
+      "Bash(git -C \"c:\\Users\\regor\\OneDrive\\Documents\\GitHub\\legosorter\" add frontend/app/page.tsx frontend/app/settings/page.tsx vision/src/background_diff_detector.py vision/src/inference.py vision/src/main_api.py vision/src/settings_manager.py)",
+      "Bash(git -C \"c:\\Users\\regor\\OneDrive\\Documents\\GitHub\\legosorter\" commit -m \"$(cat <<''EOF''\nImprove detector UI and persistence with dynamic resolution support\n\nBackend improvements:\n- Add detector parameter persistence (min/max area %, diff threshold, etc.)\n- Implement calibration persistence (background frame saved to disk)\n- Auto-load detector settings and calibration on startup\n- Add /camera/resolution endpoint for dynamic resolution detection\n- Save detector param changes to settings.json automatically\n\nFrontend improvements:\n- Fetch actual camera resolution and use it in SVG viewBox\n- Dynamic center crosshair based on frame resolution\n- Fix bounding box display (was hardcoded to 640x480, now adapts to 1280x720+)\n- Faster refresh rates: 500ms instead of 2000ms for debug views\n- Add resolution polling every 5 seconds\n\nSettings & Calibration:\n- Detector settings structure added to DEFAULT_SETTINGS\n- Background frame saved as numpy array (calibration_bg.npy)\n- Settings restored on container restart\n- Calibration auto-loaded if previously saved\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git -C \"c:\\Users\\regor\\OneDrive\\Documents\\GitHub\\legosorter\" log -2 --oneline)",
+      "Bash(timeout 5 docker-compose:*)"
     ]
   }
 }
