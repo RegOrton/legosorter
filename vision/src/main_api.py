@@ -311,6 +311,22 @@ def stop_training():
 
 @app.get("/train/status")
 def get_status():
+    # Format parts_stats for frontend
+    parts_stats_list = []
+    if state.parts_stats:
+        for part_id, stats in state.parts_stats.items():
+            avg_loss = (sum(stats['loss_values']) / len(stats['loss_values'])) if stats['loss_values'] else 0.0
+            parts_stats_list.append({
+                'part_id': part_id,
+                'views': stats['views'],
+                'epochs': round(stats['epochs'], 2),
+                'samples': stats['samples'],
+                'avg_loss': round(avg_loss, 4)
+            })
+
+    # Sort by part_id for consistent ordering
+    parts_stats_list.sort(key=lambda x: x['part_id'])
+
     return {
         "is_running": state.is_running,
         "epoch": state.epoch,
@@ -321,7 +337,10 @@ def get_status():
         "loss_history": state.loss_history,
         "timing_stats": state.timing_stats,
         "batch_number": state.batch_number,
-        "total_batches": state.total_batches
+        "total_batches": state.total_batches,
+        "parts_stats": parts_stats_list,
+        "checkpoint_loaded": state.checkpoint_loaded,
+        "checkpoint_path": state.checkpoint_path
     }
 
 # Inference endpoints
@@ -420,6 +439,17 @@ def get_inference_status():
         "center_detected": engine.state.center_detected
     }
 
+@app.get("/inference/history")
+def get_classification_history():
+    """Get classification history with thumbnails."""
+    from inference import get_inference_engine
+
+    engine = get_inference_engine()
+
+    return {
+        "history": engine.state.classification_history
+    }
+
 @app.post("/inference/classify_now")
 def classify_now():
     """
@@ -428,7 +458,7 @@ def classify_now():
     """
     from inference import get_inference_engine
     import time
-    
+
     engine = get_inference_engine()
     
     if not engine.state.is_running:
