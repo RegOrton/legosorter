@@ -39,6 +39,14 @@ class TrainingState:
         self.batch_number = 0
         self.total_batches = 0
 
+        # Training statistics per part
+        # {part_id: {'views': count, 'epochs': epochs_trained, 'samples': samples_seen, 'loss_avg': avg_loss}}
+        self.parts_stats = {}
+
+        # Checkpoint status
+        self.checkpoint_loaded = False
+        self.checkpoint_path = None
+
     def log(self, message):
         self.logs.append(message)
         if len(self.logs) > 100:
@@ -73,6 +81,66 @@ class Trainer:
     def __init__(self):
         self.stop_event = threading.Event()
         self.thread = None
+
+    def _get_dataset_parts_info(self, dataloader):
+        """
+        Extract part information from dataset for statistics tracking.
+        Returns: {part_id: views_count} or None if not available
+        """
+        try:
+            dataset = dataloader.dataset
+
+            # LDraw dataset
+            if hasattr(dataset, 'parts') and hasattr(dataset, 'part_images'):
+                return {part_id: len(dataset.part_images[part_id])
+                        for part_id in dataset.parts}
+
+            # LDView dataset
+            elif hasattr(dataset, 'dat_files'):
+                parts_info = {}
+                for dat_file in dataset.dat_files:
+                    part_id = dat_file.stem  # Extract filename without extension
+                    parts_info[part_id] = 1  # LDView generates on-the-fly, count as 1 base
+                return parts_info
+
+            # Rebrickable dataset
+            elif hasattr(dataset, 'class_names'):
+                return {part_id: 1 for part_id in dataset.class_names}
+
+            return None
+        except Exception as e:
+            logger.error(f"Could not extract parts info from dataset: {e}")
+            return None
+
+    def _get_anchor_part_id(self, dataloader, batch_idx):
+        """
+        Get the anchor part ID for a given batch index.
+        Works for LDraw, LDView, and Rebrickable datasets.
+        """
+        try:
+            dataset = dataloader.dataset
+
+            # LDraw dataset: part_idx = batch_idx % len(dataset.parts)
+            if hasattr(dataset, 'parts'):
+                part_idx = batch_idx % len(dataset.parts)
+                return dataset.parts[part_idx]
+
+            # LDView dataset: track by cycling through dat_files
+            elif hasattr(dataset, 'dat_files'):
+                if hasattr(dataset, 'dat_files') and len(dataset.dat_files) > 0:
+                    part_idx = batch_idx % len(dataset.dat_files)
+                    return dataset.dat_files[part_idx].stem  # Return filename without extension
+
+            # Rebrickable dataset: track by cycling through class_names
+            elif hasattr(dataset, 'class_names'):
+                if hasattr(dataset, 'class_names') and len(dataset.class_names) > 0:
+                    part_idx = batch_idx % len(dataset.class_names)
+                    return dataset.class_names[part_idx]
+
+            return None
+        except Exception as e:
+            logger.error(f"Could not get anchor part for batch: {e}")
+            return None
 
     def start_training(self, epochs=10, batch_size=32, limit=None, dataset_type=DATASET_LDRAW):
         if self.thread and self.thread.is_alive():
@@ -119,6 +187,17 @@ class Trainer:
                     return
                 dataloader = get_ldraw_dataloader(ldraw_renders_dir, batch_size=batch_size, limit=limit)
                 state.log(f"Loaded LDraw dataset with {len(dataloader.dataset.parts)} parts")
+
+                # Initialize parts stats for LDraw
+                parts_info = self._get_dataset_parts_info(dataloader)
+                if parts_info:
+                    for part_id, views_count in parts_info.items():
+                        state.parts_stats[part_id] = {
+                            'views': views_count,
+                            'epochs': 0.0,
+                            'samples': 0,
+                            'loss_values': []
+                        }
             elif dataset_type == DATASET_LDVIEW:
                 # LDView generates images on-the-fly during training
                 from ldview_dataset import get_ldview_dataloader
@@ -161,6 +240,17 @@ class Trainer:
                 )
                 state.log(f"Loaded LDView on-the-fly renderer with {dat_files_count} .dat files")
                 state.log(f"Will generate {samples_per_epoch} triplets per epoch in real-time")
+
+                # Initialize parts stats for LDView
+                parts_info = self._get_dataset_parts_info(dataloader)
+                if parts_info:
+                    for part_id, views_count in parts_info.items():
+                        state.parts_stats[part_id] = {
+                            'views': views_count,
+                            'epochs': 0.0,
+                            'samples': 0,
+                            'loss_values': []
+                        }
             else:
                 # Rebrickable uses the synthesizer which automatically loads calibration background
                 dataloader = get_dataloader(data_dir, batch_size=batch_size, limit=limit)
@@ -172,14 +262,42 @@ class Trainer:
                 else:
                     state.log("Loaded Rebrickable dataset with synthetic backgrounds")
 
+                # Initialize parts stats for Rebrickable
+                parts_info = self._get_dataset_parts_info(dataloader)
+                if parts_info:
+                    for part_id, views_count in parts_info.items():
+                        state.parts_stats[part_id] = {
+                            'views': views_count,
+                            'epochs': 0.0,
+                            'samples': 0,
+                            'loss_values': []
+                        }
+
             model = LegoEmbeddingNet(embedding_dim=128).to(device)
-            state.log("Model loaded.")
-            
-            criterion = nn.TripletMarginLoss(margin=1.0, p=2)
-            optimizer = optim.Adam(model.parameters(), lr=0.001)
-            
+
+            # Load existing checkpoint if available to continue training
             save_path = Path(data_dir).parent / "output" / "models"
             save_path.mkdir(parents=True, exist_ok=True)
+            checkpoint_path = save_path / "lego_embedder_final.pth"
+
+            if checkpoint_path.exists():
+                try:
+                    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+                    state.checkpoint_loaded = True
+                    state.checkpoint_path = str(checkpoint_path.name)
+                    state.log(f"✓ Loaded existing model from {checkpoint_path.name} - continuing training")
+                    state.log(f"⚠ IMPORTANT: Training will IMPROVE existing model, not replace it")
+                except Exception as e:
+                    state.checkpoint_loaded = False
+                    state.checkpoint_path = None
+                    state.log(f"⚠ Could not load checkpoint ({e}) - training from scratch")
+            else:
+                state.checkpoint_loaded = False
+                state.checkpoint_path = None
+                state.log("No existing checkpoint found - training from scratch with ImageNet weights")
+
+            criterion = nn.TripletMarginLoss(margin=1.0, p=2)
+            optimizer = optim.Adam(model.parameters(), lr=0.001)
             
             model.train()
             
@@ -233,6 +351,16 @@ class Trainer:
 
                     total_loss += loss.item()
                     batches += 1
+
+                    # Update per-part statistics
+                    if state.parts_stats:
+                        anchor_part_id = self._get_anchor_part_id(dataloader, i)
+                        if anchor_part_id and anchor_part_id in state.parts_stats:
+                            part_stat = state.parts_stats[anchor_part_id]
+                            part_stat['samples'] += anchor.size(0)  # Batch size
+                            part_stat['loss_values'].append(loss.item())
+                            # Accumulate epochs as partial: (batches_for_part / total_batches_per_epoch)
+                            part_stat['epochs'] += (anchor.size(0) / len(dataloader.dataset)) if len(dataloader.dataset) > 0 else 0
 
                     # Accumulate timing stats
                     epoch_data_gen += data_load_time

@@ -13,6 +13,7 @@ export default function Home() {
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [calibrationStatus, setCalibrationStatus] = useState<any>(null);
   const [frameResolution, setFrameResolution] = useState({ width: 640, height: 480 });
+  const [classificationHistory, setClassificationHistory] = useState<any[]>([]);
 
   // Poll inference status every second
   useEffect(() => {
@@ -77,6 +78,26 @@ export default function Home() {
 
     fetchResolution();
     const interval = setInterval(fetchResolution, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Poll classification history
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/inference/history');
+        if (res.ok) {
+          const data = await res.json();
+          setClassificationHistory(data.history || []);
+        }
+      } catch (e) {
+        // Silently fail
+      }
+    };
+
+    fetchHistory();
+    const interval = setInterval(fetchHistory, 2000); // Poll every 2 seconds
 
     return () => clearInterval(interval);
   }, []);
@@ -488,6 +509,124 @@ export default function Home() {
             )}
           </div>
 
+          {/* Auto-Classification State Indicator */}
+          {inferenceStatus?.is_running && inferenceMode === 'auto' && (
+            <div className="bg-zinc-900/50 rounded-xl border border-zinc-800 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2v4" /><path d="m16.2 7.8 2.9-2.9" /><path d="M18 12h4" /><path d="m16.2 16.2 2.9 2.9" /><path d="M12 18v4" /><path d="m4.9 19.1 2.9-2.9" /><path d="M2 12h4" /><path d="m4.9 4.9 2.9 2.9" />
+                  </svg>
+                  Auto Classification Pipeline
+                </h3>
+              </div>
+
+              <div className="flex items-center">
+                {/* Step 1: Waiting for Part */}
+                <div className={`flex-1 flex flex-col items-center p-3 rounded-lg transition-all ${
+                  inferenceStatus.auto_state === 'waiting'
+                    ? 'bg-zinc-800 border border-zinc-600'
+                    : 'opacity-50'
+                }`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+                    inferenceStatus.auto_state === 'waiting'
+                      ? 'bg-zinc-700 border-2 border-zinc-500'
+                      : 'bg-zinc-800 border border-zinc-700'
+                  }`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={inferenceStatus.auto_state === 'waiting' ? 'text-zinc-300 animate-pulse' : 'text-zinc-600'}>
+                      <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+                    </svg>
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-wide ${
+                    inferenceStatus.auto_state === 'waiting' ? 'text-zinc-300' : 'text-zinc-600'
+                  }`}>
+                    Waiting for Part
+                  </span>
+                  {inferenceStatus.auto_state === 'waiting' && (
+                    <span className="text-[9px] text-zinc-500 mt-1">Place part in center</span>
+                  )}
+                </div>
+
+                {/* Connector 1-2 */}
+                <div className={`w-12 h-0.5 ${
+                  inferenceStatus.auto_state !== 'waiting' ? 'bg-blue-500' : 'bg-zinc-700'
+                }`} />
+
+                {/* Step 2: Classifying */}
+                <div className={`flex-1 flex flex-col items-center p-3 rounded-lg transition-all ${
+                  inferenceStatus.auto_state === 'stabilizing'
+                    ? 'bg-blue-500/20 border border-blue-500/50'
+                    : 'opacity-50'
+                }`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+                    inferenceStatus.auto_state === 'stabilizing'
+                      ? 'bg-blue-500/30 border-2 border-blue-500'
+                      : inferenceStatus.auto_state === 'classified' || inferenceStatus.auto_state === 'cooldown'
+                        ? 'bg-blue-500/20 border border-blue-500/50'
+                        : 'bg-zinc-800 border border-zinc-700'
+                  }`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={
+                      inferenceStatus.auto_state === 'stabilizing'
+                        ? 'text-blue-400 animate-spin'
+                        : inferenceStatus.auto_state === 'classified' || inferenceStatus.auto_state === 'cooldown'
+                          ? 'text-blue-400'
+                          : 'text-zinc-600'
+                    }>
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                    </svg>
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-wide ${
+                    inferenceStatus.auto_state === 'stabilizing' ? 'text-blue-400' :
+                    inferenceStatus.auto_state === 'classified' || inferenceStatus.auto_state === 'cooldown' ? 'text-blue-400/70' : 'text-zinc-600'
+                  }`}>
+                    Classifying
+                  </span>
+                  {inferenceStatus.auto_state === 'stabilizing' && (
+                    <span className="text-[9px] text-blue-400/70 mt-1">Processing...</span>
+                  )}
+                </div>
+
+                {/* Connector 2-3 */}
+                <div className={`w-12 h-0.5 ${
+                  inferenceStatus.auto_state === 'classified' || inferenceStatus.auto_state === 'cooldown'
+                    ? 'bg-emerald-500'
+                    : 'bg-zinc-700'
+                }`} />
+
+                {/* Step 3: Waiting for Exit */}
+                <div className={`flex-1 flex flex-col items-center p-3 rounded-lg transition-all ${
+                  inferenceStatus.auto_state === 'classified' || inferenceStatus.auto_state === 'cooldown'
+                    ? 'bg-emerald-500/20 border border-emerald-500/50'
+                    : 'opacity-50'
+                }`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+                    inferenceStatus.auto_state === 'classified' || inferenceStatus.auto_state === 'cooldown'
+                      ? 'bg-emerald-500/30 border-2 border-emerald-500'
+                      : 'bg-zinc-800 border border-zinc-700'
+                  }`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={
+                      inferenceStatus.auto_state === 'classified' || inferenceStatus.auto_state === 'cooldown'
+                        ? 'text-emerald-400 animate-pulse'
+                        : 'text-zinc-600'
+                    }>
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-wide ${
+                    inferenceStatus.auto_state === 'classified' || inferenceStatus.auto_state === 'cooldown'
+                      ? 'text-emerald-400'
+                      : 'text-zinc-600'
+                  }`}>
+                    Remove Part
+                  </span>
+                  {(inferenceStatus.auto_state === 'classified' || inferenceStatus.auto_state === 'cooldown') && (
+                    <span className="text-[9px] text-emerald-400/70 mt-1">Ready for next</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Secondary Stats / Graphs Row */}
           <div className="grid grid-cols-3 gap-4 h-32">
             <div className="bg-zinc-900/50 rounded-xl border border-zinc-800 p-4 flex flex-col justify-between">
@@ -505,6 +644,48 @@ export default function Home() {
               </span>
             </div>
           </div>
+
+          {/* Classification History */}
+          {classificationHistory.length > 0 && (
+            <div className="bg-zinc-900/50 rounded-xl border border-zinc-800">
+              <h2 className="text-sm font-medium text-zinc-400 mb-3 flex items-center gap-2 p-4 pb-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                CLASSIFICATION HISTORY
+              </h2>
+              <div className="bg-zinc-950 rounded-lg border border-zinc-800 max-h-[300px] overflow-y-auto m-4 mt-2">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-zinc-900 border-b border-zinc-800">
+                    <tr>
+                      <th className="text-left p-2 text-zinc-500 font-semibold">Image</th>
+                      <th className="text-left p-2 text-zinc-500 font-semibold">Part ID</th>
+                      <th className="text-right p-2 text-zinc-500 font-semibold">Confidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {classificationHistory.slice().reverse().map((entry: any, idx: number) => (
+                      <tr key={idx} className="border-b border-zinc-800 hover:bg-zinc-900/50 transition-colors">
+                        <td className="p-2">
+                          <img
+                            src={`data:image/jpeg;base64,${entry.thumbnail}`}
+                            alt={entry.part_id}
+                            className="w-12 h-12 rounded border border-zinc-700 object-contain"
+                          />
+                        </td>
+                        <td className="p-2">
+                          <span className="font-mono text-white font-bold">{entry.part_id}</span>
+                        </td>
+                        <td className="p-2 text-right">
+                          <span className={`font-mono font-bold ${entry.confidence > 0.7 ? 'text-emerald-400' : entry.confidence > 0.5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                            {(entry.confidence * 100).toFixed(1)}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Sidebar Controls */}
@@ -707,6 +888,7 @@ export default function Home() {
                 </div>
               </div>
             )}
+
           </div>
 
           {/* Logs Panel */}

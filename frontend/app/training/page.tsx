@@ -95,6 +95,50 @@ export default function TrainingPage() {
             <main className="flex-1 p-6 grid grid-cols-1 md:grid-cols-12 gap-6 max-w-[1600px] mx-auto w-full">
                 {/* Left Column: Logs & Viz */}
                 <section className="col-span-1 md:col-span-8 flex flex-col gap-6">
+                    {/* Checkpoint Status Banner */}
+                    {status && (status.checkpoint_loaded !== undefined) && (
+                        <div className={`rounded-xl border p-5 ${
+                            status.checkpoint_loaded
+                                ? 'bg-blue-950/30 border-blue-800'
+                                : 'bg-amber-950/30 border-amber-800'
+                        }`}>
+                            <div className="flex items-start gap-3">
+                                <div className="flex-shrink-0 mt-1">
+                                    {status.checkpoint_loaded ? (
+                                        <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                    )}
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className={`text-sm font-bold mb-1 ${
+                                        status.checkpoint_loaded ? 'text-blue-300' : 'text-amber-300'
+                                    }`}>
+                                        {status.checkpoint_loaded ? 'CONTINUING FROM CHECKPOINT' : 'TRAINING FROM SCRATCH'}
+                                    </h3>
+                                    <p className="text-xs text-zinc-400 leading-relaxed">
+                                        {status.checkpoint_loaded ? (
+                                            <>
+                                                Training is <strong className="text-blue-400">improving the existing model</strong> ({status.checkpoint_path}).
+                                                All previously learned knowledge is preserved. New parts added to the dataset will be learned
+                                                while maintaining recognition of old parts.
+                                            </>
+                                        ) : (
+                                            <>
+                                                Training is starting with <strong className="text-amber-400">ImageNet pretrained weights</strong>.
+                                                No existing LEGO model checkpoint was found. The model will learn from scratch.
+                                            </>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Progress Bar */}
                     {isTraining && (
                         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
@@ -215,6 +259,7 @@ export default function TrainingPage() {
                             </div>
                         </div>
                     )}
+
                     <div className="flex flex-col gap-4">
                         <h2 className="text-xl font-bold tracking-tight">Live Training Feed</h2>
 
@@ -266,6 +311,58 @@ export default function TrainingPage() {
                             ))}
                         </div>
                     </div>
+
+                    {/* Parts Statistics Table */}
+                    {status?.parts_stats && status.parts_stats.length > 0 && (
+                        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+                            <h3 className="text-sm font-bold text-zinc-400 mb-4">PARTS STATISTICS</h3>
+                            <div className="bg-zinc-950 rounded-lg border border-zinc-800 overflow-hidden">
+                                <div className="max-h-96 overflow-y-auto">
+                                    <table className="w-full text-xs">
+                                        <thead className="sticky top-0 bg-zinc-900 border-b border-zinc-800">
+                                            <tr>
+                                                <th className="text-left p-3 text-zinc-500 font-semibold">Part ID</th>
+                                                <th className="text-center p-3 text-zinc-500 font-semibold">Views</th>
+                                                <th className="text-center p-3 text-zinc-500 font-semibold">Epochs</th>
+                                                <th className="text-center p-3 text-zinc-500 font-semibold">Samples</th>
+                                                <th className="text-right p-3 text-zinc-500 font-semibold">Avg Loss</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {status.parts_stats.map((part: any, idx: number) => (
+                                                <tr key={idx} className="border-b border-zinc-800 hover:bg-zinc-900/50 transition-colors">
+                                                    <td className="p-3">
+                                                        <span className="font-mono text-emerald-400 font-bold">{part.part_id}</span>
+                                                    </td>
+                                                    <td className="p-3 text-center">
+                                                        <span className="text-zinc-300">{part.views}</span>
+                                                    </td>
+                                                    <td className="p-3 text-center">
+                                                        <span className="text-zinc-300">{part.epochs}</span>
+                                                    </td>
+                                                    <td className="p-3 text-center">
+                                                        <span className="text-zinc-300">{part.samples}</span>
+                                                    </td>
+                                                    <td className="p-3 text-right">
+                                                        <span className={`font-mono font-bold ${
+                                                            part.avg_loss < 0.5 ? 'text-emerald-400' :
+                                                            part.avg_loss < 1.0 ? 'text-yellow-400' :
+                                                            'text-orange-400'
+                                                        }`}>
+                                                            {part.avg_loss.toFixed(4)}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="bg-zinc-900 border-t border-zinc-800 p-2 text-xs text-zinc-500">
+                                    <span>{status.parts_stats.length} part(s) in training</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </section>
 
                 {/* Right Column: Controls */}
@@ -334,10 +431,15 @@ export default function TrainingPage() {
 
                         <div className="h-px bg-zinc-800 my-1" />
 
-                        <div className="text-xs text-zinc-500 p-4 bg-zinc-950 rounded-lg border border-zinc-800">
-                            <p className="mb-2">Training will use settings configured in the Settings tab.</p>
+                        <div className="text-xs text-zinc-500 p-4 bg-zinc-950 rounded-lg border border-zinc-800 space-y-2">
+                            <p>Training will use settings configured in the Settings tab.</p>
                             <p>Backbone: MobileNetV3</p>
                             <p>Loss: TripletMargin</p>
+                            <div className="pt-2 mt-2 border-t border-zinc-800">
+                                <p className={`font-bold ${status?.checkpoint_loaded ? 'text-blue-400' : 'text-amber-400'}`}>
+                                    {status?.checkpoint_loaded ? '⚡ Incremental Training Mode' : '🆕 Fresh Training Mode'}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </section>
