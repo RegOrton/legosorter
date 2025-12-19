@@ -140,6 +140,59 @@ curl -X POST "http://localhost:8000/inference/classify_now"
 curl http://localhost:8000/inference/status
 ```
 
+### Nearest-Neighbor Classification System
+
+The vision system uses **embedding-based nearest-neighbor search** for classification instead of a traditional classification head.
+
+#### How It Works
+
+1. **Training**: Model learns embeddings via triplet loss (anchor, positive, negative)
+2. **Reference Database**: Pre-computed embeddings for known parts stored in `reference_db.npz`
+3. **Classification**: At inference, compute embedding for detected object and find closest match using cosine similarity
+4. **Result**: Returns actual LEGO part ID (e.g., "3001", "3005") with similarity score (0-1)
+
+#### Building the Reference Database
+
+After training, generate reference embeddings:
+
+```bash
+# In vision container
+docker-compose exec vision python src/build_reference_db.py
+
+# Or directly if running locally
+python vision/src/build_reference_db.py
+```
+
+This creates `vision/output/reference_db.npz` containing:
+- `part_ids`: Array of part IDs (e.g., ["3001", "3003", "3004"])
+- `embeddings`: Averaged embeddings for each part (shape: [num_parts, 128])
+- `metadata`: Optional metadata for each part
+
+**Default settings**: 10 views per part, uses calibration background if available
+
+#### Auto-Classification State Machine
+
+When inference runs in AUTO mode, it follows a 3-state pipeline:
+
+| State | Description | Duration |
+|-------|-------------|----------|
+| **WAITING** | Waiting for object to appear and center | Until object detected |
+| **STABILIZING** | Object centered, classification in progress | 5 frames (~166ms) |
+| **CLASSIFIED** | Classification complete, waiting for object to leave | Until object exits |
+
+**Flow**: Object appears → becomes stable (8 frames) → STABILIZING (classify immediately) → wait 5 frames → CLASSIFIED → object leaves → WAITING
+
+The dashboard displays this pipeline visually when running in AUTO mode at http://localhost:3000.
+
+**Switch modes**:
+```bash
+# Auto mode (detects centered objects automatically)
+curl -X POST "http://localhost:8000/inference/mode?mode=auto"
+
+# Manual mode (classify on demand via button)
+curl -X POST "http://localhost:8000/inference/mode?mode=manual"
+```
+
 ## Code Structure
 
 ### Vision Service (`vision/src/`)
@@ -149,7 +202,7 @@ curl http://localhost:8000/inference/status
 - **`settings_manager.py`** - Persistent settings storage (dataset, epochs, batch_size, camera_type) saved to JSON
 - **`model.py`** - LegoEmbeddingNet (MobileNetV3 + metric learning)
 - **`dataset.py`** - LegoTripletDataset for triplet loss training (Rebrickable on-the-fly synthesis)
-- **`synthesizer.py`** - LegoSynthesizer generates synthetic training samples with perspective transforms, shadows, and camera effects
+- **`synthesizer.py`** - LegoSynthesizer generates synthetic training samples with perspective transforms, shadows, and camera effects (auto-loads calibration background)
 - **`generate_backgrounds.py`** - Generates synthetic background images (solid colors, gradients, textures) for training diversity
 - **`ldraw_parser.py`** - Parses LDraw .dat files and resolves subfile references to build 3D geometry
 - **`ldraw_renderer.py`** - Software 3D renderer for generating multi-view training images from LDraw models
@@ -157,17 +210,19 @@ curl http://localhost:8000/inference/status
 - **`generate_ldraw_dataset.py`** - CLI tool to generate training images from LDraw library
 - **`ldview_renderer.py`** - LDView-based renderer for realistic 3D renders
 - **`generate_ldview_training_data.py`** - CLI to generate training data using LDView
-- **`camera.py`** - Camera wrapper supporting USB, CSI (Raspberry Pi), and HTTP webcam modes
+- **`build_reference_db.py`** - Generates reference embedding database from trained model for nearest-neighbor classification
+- **`camera.py`** - Camera wrapper supporting USB, CSI (Raspberry Pi), HTTP webcam, and video file modes
 - **`webcam_client.py`** - WebcamClient class for fetching frames from Windows host
-- **`inference.py`** - Real-time inference engine (planned)
+- **`inference.py`** - Real-time inference engine with auto-classification state machine and nearest-neighbor search
+- **`background_diff_detector.py`** - Background subtraction detector for object detection with calibration persistence
 - **`preprocessor.py`** - Image preprocessing utilities
 - **`ingest_rebrickable.py`** - Downloads LEGO part images from Rebrickable API
 
 ### Frontend (`frontend/app/`)
 
-- **`page.tsx`** - Main dashboard (planned: inventory explorer, retrieval interface)
-- **`training/page.tsx`** - Training dashboard with live triplet visualization, logs, and navigation
-- **`settings/page.tsx`** - Settings page for configuring dataset, training parameters, and camera
+- **`page.tsx`** - Main dashboard with live video feed, bounding box visualization, auto-classification pipeline indicator, calibration controls, and machine controls
+- **`training/page.tsx`** - Training dashboard with live triplet visualization, logs, calibration background display, and training controls
+- **`settings/page.tsx`** - Settings page for configuring dataset, training parameters, camera source, and video file upload
 - **`layout.tsx`** - Root layout
 - **`globals.css`** - Tailwind CSS styles
 
@@ -176,10 +231,14 @@ curl http://localhost:8000/inference/status
 - **`vision/data/`** - Training data (clean brick images, backgrounds, Rebrickable database)
 - **`vision/data/ldraw_renders/`** - LDraw Python software renderer output
 - **`vision/data/ldview_training/`** - LDView realistic 3D renders
-- **`vision/input/`** - Input images for processing
-- **`vision/output/`** - Generated outputs (models saved to `vision/output/models/`)
-- **`vision/output/settings.json`** - Persistent settings (dataset, epochs, batch_size, camera_type)
-- **`vision/output/debug/`** - Debug outputs (test frames, etc.)
+- **`vision/input/`** - Input images for processing (includes .dat files for LDView training)
+- **`vision/output/`** - Generated outputs
+- **`vision/output/models/`** - Trained models (lego_embedder_final.pth)
+- **`vision/output/reference_db.npz`** - Reference embedding database for nearest-neighbor classification
+- **`vision/output/calibration_bg.npy`** - Saved calibration background (auto-loaded on startup)
+- **`vision/output/settings.json`** - Persistent settings (dataset, epochs, batch_size, camera_type, video_file)
+- **`vision/output/video_uploads/`** - Uploaded video files for video file mode
+- **`vision/output/debug/`** - Debug outputs (test frames, detector visualizations)
 
 ## Key Technical Details
 
